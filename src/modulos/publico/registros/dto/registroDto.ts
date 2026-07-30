@@ -2,12 +2,18 @@ import {
   IsString,
   IsNotEmpty,
   IsEmail,
+  IsInt,
   MinLength,
   MaxLength,
   Matches,
 } from 'class-validator';
 
 export class RegistroDto {
+  // Tenant al que se une (invitación a un conjunto/edificio ya existente).
+  // Para crear un tenant nuevo, ver POST /publico/registros/tenant.
+  @IsInt()
+  codTenant!: number;
+
   @IsString()
   @IsNotEmpty()
   @MinLength(2)

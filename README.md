@@ -48,15 +48,25 @@ src/
 │           ├── jwt.guard.ts          # valida JWT (HS256), chequea revocación
 │           └── roles.guard.ts        # autorización por rol vía Reflector
 ├── modelos/                     # entidades TypeORM, una carpeta por entidad
-│   ├── usuario/ rol/ acceso/ propiedad/
+│   ├── usuario/ rol/ acceso/ tenant/
+│   ├── inmueble/ torre/ unidad/ residente/
+│   ├── cuenta-mensual/ cargo-detalle/ pago/ gasto/
+│   ├── zona-comun/ reserva/ parqueadero/
+│   ├── visita/ autorizacion-previa/ paquete/
+│   ├── aviso/ reporte-dano/ notificacion-enviada/
 │   └── audit/ access-log.ts, password-reset-token.ts, revoked-token.ts
 ├── modulos/
 │   ├── publico/                 # sin JwtGuard — prefijo de ruta /publico
 │   │   ├── accesos/             # login/logout
-│   │   ├── registros/           # signup, recuperar/cambiar password
+│   │   ├── registros/           # alta de tenant, signup, recuperar/cambiar password
 │   │   └── correo/              # nodemailer
 │   └── privado/                 # con JwtGuard (+ RolesGuard) — prefijo /privado
-│       ├── usuarios/ roles/ propiedades/
+│       ├── usuarios/ roles/                       # auth/admin
+│       ├── inmuebles/ torres/ unidades/ residentes/
+│       ├── cuentas-mensuales/ pagos/ gastos/ caja-fuerte/
+│       ├── zonas-comunes/ reservas/ parqueaderos/
+│       ├── porteria/ avisos/ reportes-dano/
+│       └── cobranza/ notificaciones/              # motor de cobranza diario
 └── utilidades/compartido/
     ├── generarToken.ts           # firma JWT: jti, sub, name, nombre_rol
     └── seed.service.ts           # roles base + admin opcional
@@ -75,13 +85,21 @@ src/
 - **Rate limiting de login en memoria** por correo e IP (5 intentos / 15 min), con limpieza periódica para no crecer indefinidamente.
 - **Auditoría de accesos** (`access_logs`, FK real a `usuarios` con `onDelete: SET NULL`): cada login, registro, reset y cambio de contraseña queda registrado con IP y user-agent reales de la petición.
 - **Reset de contraseña de un solo uso**: token UUID con expiración de 15 minutos; al pedir uno nuevo, los anteriores del mismo usuario se invalidan.
-- **Rol nunca viene del cliente en el autorregistro**: `POST /publico/registros/user` siempre asigna el rol `usuario` server-side; solo un admin puede asignar roles vía `POST /privado/usuarios`.
+- **Rol nunca viene del cliente en el autorregistro**: `POST /publico/registros/user` siempre asigna el rol `residente` server-side (a un tenant existente, indicado por `codTenant`); solo un dueño/admin puede asignar otros roles vía `POST /privado/usuarios`. `POST /publico/registros/tenant` crea un tenant nuevo junto con su usuario `dueno`.
+- **Multi-tenant**: todo `Usuario` pertenece a un `Tenant` (`codTenant`), que también viaja en el JWT (`tenant_id`). Cualquier entidad colgada de un `Inmueble` se valida contra ese tenant antes de leerse o modificarse (`tenant.helper.ts`), devolviendo 404 (no 403) si no coincide, para no filtrar existencia entre tenants.
 - **Validación de entorno con Joi**: si falta una variable requerida, la app no arranca.
 
-## Módulos de ejemplo
+## Módulos de dominio
 
-- `usuarios` + `roles` + `accesos` (login/logout) + `registros` (signup/reset): el flujo de auth completo.
-- `propiedades`: módulo de dominio de Propify (CRUD de inmuebles) — demuestra el patrón de "dueño del recurso" (solo el creador o un admin pueden editar/eliminar), vía `esAdmin`/`obtenerUsuarioId` de `rol.helper.ts`.
+- `usuarios` + `roles` + `accesos` (login/logout) + `registros` (alta de tenant, signup, reset): el flujo de auth completo. Los 4 roles del negocio son `dueno`, `admin`, `residente` y `celador` (ver `rol.helper.ts`).
+- `inmuebles` / `torres` / `unidades` / `residentes`: estructura del inmueble y sus residentes, con banderas de módulo por inmueble (`tieneTorres`, `tieneZonasComunes`, `tieneParqueaderos`, `tieneCelador`, `tieneCartelera`).
+- `cuentas-mensuales` / `pagos` / `gastos` / `caja-fuerte`: cobranza y finanzas del inmueble.
+- `zonas-comunes` / `reservas`: reservas de zonas comunes, bloqueadas para residentes con cuentas vencidas.
+- `parqueaderos`: asignación opcional de parqueaderos a unidades.
+- `porteria`: visitas, autorizaciones previas y paquetes — exclusivo del rol `celador`.
+- `avisos`: cartelera del inmueble, con notificación instantánea a los residentes.
+- `reportes-dano`: reportes de daño de residentes, con notificación instantánea a dueño/admin.
+- `cobranza` + `notificaciones`: el "Cobrador Virtual" — cron diario (`@Cron('0 6 * * *')`) que genera cuentas, marca vencidas y envía recordatorios/mora; `POST /privado/cobranza/ejecutar` (solo `dueno`) corre el mismo ciclo manualmente para pruebas. `NotificacionesService` es hoy un stub que loguea el envío y lo registra en `notificaciones_enviadas` — sin proveedor de WhatsApp real todavía.
 
 El login es por **correo + contraseña** (`correoUsuario` / `claveAcceso`).
 

@@ -6,12 +6,14 @@ import { AccessLog, AuditEvent } from 'src/modelos/audit/access-log';
 import { PasswordResetToken } from 'src/modelos/audit/password-reset-token';
 import { Rol } from 'src/modelos/rol/rol';
 import { Usuario } from 'src/modelos/usuario/usuario';
+import { Tenant } from 'src/modelos/tenant/tenant';
 import { DataSource, Repository } from 'typeorm';
 import { ACCESO_SQL } from '../accesos/accesos.sql';
 import GenerarToken, {
   type DatosSesion,
 } from 'src/utilidades/compartido/generarToken';
 import { RegistroDto } from './dto/registroDto';
+import { CrearTenantDto } from './dto/crear-tenant.dto';
 import { RecuperarContraseniaDto } from './dto/recuperar-contrasenia.dto';
 import { NuevaContraseniaDto } from './dto/nueva-contrasenia';
 import { CambioPasswordDto } from './dto/cambio-password.dto';
@@ -26,6 +28,7 @@ export class RegistrosService {
   private accessLogRepositorio: Repository<AccessLog>;
   private passwordResetTokenRepositorio: Repository<PasswordResetToken>;
   private rolesRepositorio: Repository<Rol>;
+  private tenantRepositorio: Repository<Tenant>;
 
   constructor(
     private poolConexion: DataSource,
@@ -37,6 +40,100 @@ export class RegistrosService {
     this.passwordResetTokenRepositorio =
       poolConexion.getRepository(PasswordResetToken);
     this.rolesRepositorio = poolConexion.getRepository(Rol);
+    this.tenantRepositorio = poolConexion.getRepository(Tenant);
+  }
+
+  // ALTA DE TENANT NUEVO (autoservicio): crea el Tenant y su primer
+  // usuario, con rol DUEÑO, en una sola transacción.
+  public async nuevoTenant(
+    datos: CrearTenantDto,
+    ip: string,
+    userAgent: string,
+  ): Promise<{ token: string }> {
+    const queryRunner = this.poolConexion.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const usuarioExisteCorreo = await queryRunner.manager
+        .getRepository(Usuario)
+        .findOne({ where: { correoUsuario: datos.correoUsuario } });
+      if (usuarioExisteCorreo) {
+        throw new HttpException(
+          'El correo ya está registrado',
+          HttpStatus.NOT_ACCEPTABLE,
+        );
+      }
+
+      const rolDueno = await this.rolesRepositorio.findOne({
+        where: { nombreRol: RoleNames.DUENO },
+      });
+      if (!rolDueno) {
+        throw new HttpException(
+          'Rol dueño no configurado',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+
+      const nuevoTenant = queryRunner.manager
+        .getRepository(Tenant)
+        .create({ nombre: datos.nombreTenant });
+      const tenantGuardado = await queryRunner.manager.save(nuevoTenant);
+
+      const nuevoDueno = this.usuarioRepositorio.create({
+        nombreUsuario: datos.nombreUsuario,
+        correoUsuario: datos.correoUsuario,
+        codRol: rolDueno.codRol,
+        codTenant: tenantGuardado.codTenant,
+      });
+      const duenoGuardado = await queryRunner.manager.save(nuevoDueno);
+
+      const claveCifrada = await bcrypt.hash(datos.claveAcceso, 12);
+      const nuevoAcceso = this.accesoRepositorio.create({
+        codUsuario: duenoGuardado.codUsuario,
+        claveAcceso: claveCifrada,
+      });
+      await queryRunner.manager.save(nuevoAcceso);
+
+      await queryRunner.commitTransaction();
+
+      await this.accessLogRepositorio.save({
+        codUsuario: duenoGuardado.codUsuario,
+        event: AuditEvent.REGISTER,
+        ip,
+        userAgent,
+        details: `Tenant registrado: ${tenantGuardado.nombre} (dueño: ${duenoGuardado.nombreUsuario})`,
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const sesionRows = await this.poolConexion.query(
+        ACCESO_SQL.DATOS_SESION,
+        [duenoGuardado.codUsuario],
+      );
+      const token = GenerarToken.procesarRespuesta(
+        (sesionRows as DatosSesion[])[0],
+      );
+
+      return { token };
+    } catch (error: unknown) {
+      await queryRunner.rollbackTransaction();
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      const errorBd = error as { code?: string };
+      if (errorBd.code === '23505') {
+        throw new HttpException(
+          'El correo ya está registrado',
+          HttpStatus.NOT_ACCEPTABLE,
+        );
+      }
+      throw new HttpException(
+        'No se pudo completar el registro del tenant',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   // REGISTRO NUEVO USUARIO
@@ -60,11 +157,18 @@ export class RegistrosService {
         );
       }
 
-      // El rol nunca viene del cliente: se asigna el rol base configurado en
-      // el servidor. Asignar roles administrativos es responsabilidad
-      // exclusiva de un admin vía POST /privado/usuarios.
+      const tenant = await this.tenantRepositorio.findOneBy({
+        codTenant: datosRegistro.codTenant,
+      });
+      if (!tenant || !tenant.activo) {
+        throw new HttpException('Tenant no encontrado', HttpStatus.NOT_FOUND);
+      }
+
+      // El rol nunca viene del cliente: el autorregistro público siempre
+      // asigna RESIDENTE. Asignar roles administrativos o CELADOR es
+      // responsabilidad exclusiva de un DUEÑO/ADMIN vía POST /privado/usuarios.
       const rolBase = await this.rolesRepositorio.findOne({
-        where: { nombreRol: RoleNames.USUARIO },
+        where: { nombreRol: RoleNames.RESIDENTE },
       });
       if (!rolBase) {
         throw new HttpException(
@@ -77,6 +181,7 @@ export class RegistrosService {
         nombreUsuario: datosRegistro.nombreUsuario,
         correoUsuario: datosRegistro.correoUsuario,
         codRol: rolBase.codRol,
+        codTenant: tenant.codTenant,
       });
 
       const usuarioGuardado = await queryRunner.manager.save(nuevoUsuario);

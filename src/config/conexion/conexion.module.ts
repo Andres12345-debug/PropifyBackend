@@ -3,9 +3,26 @@ import { Acceso } from 'src/modelos/acceso/acceso';
 import { AccessLog } from 'src/modelos/audit/access-log';
 import { PasswordResetToken } from 'src/modelos/audit/password-reset-token';
 import { RevokedToken } from 'src/modelos/audit/revoked-token';
-import { Propiedad } from 'src/modelos/propiedad/propiedad';
 import { Rol } from 'src/modelos/rol/rol';
 import { Usuario } from 'src/modelos/usuario/usuario';
+import { Tenant } from 'src/modelos/tenant/tenant';
+import { Inmueble } from 'src/modelos/inmueble/inmueble';
+import { Torre } from 'src/modelos/torre/torre';
+import { Unidad } from 'src/modelos/unidad/unidad';
+import { Residente } from 'src/modelos/residente/residente';
+import { CuentaMensual } from 'src/modelos/cuenta-mensual/cuenta-mensual';
+import { CargoDetalle } from 'src/modelos/cargo-detalle/cargo-detalle';
+import { Pago } from 'src/modelos/pago/pago';
+import { Gasto } from 'src/modelos/gasto/gasto';
+import { ZonaComun } from 'src/modelos/zona-comun/zona-comun';
+import { Reserva } from 'src/modelos/reserva/reserva';
+import { Parqueadero } from 'src/modelos/parqueadero/parqueadero';
+import { Visita } from 'src/modelos/visita/visita';
+import { AutorizacionPrevia } from 'src/modelos/autorizacion-previa/autorizacion-previa';
+import { Paquete } from 'src/modelos/paquete/paquete';
+import { Aviso } from 'src/modelos/aviso/aviso';
+import { ReporteDano } from 'src/modelos/reporte-dano/reporte-dano';
+import { NotificacionEnviada } from 'src/modelos/notificacion-enviada/notificacion-enviada';
 import { DataSource } from 'typeorm';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 
@@ -40,7 +57,24 @@ const logger = new Logger('ConexionModule');
               RevokedToken,
               Usuario,
               Rol,
-              Propiedad,
+              Tenant,
+              Inmueble,
+              Torre,
+              Unidad,
+              Residente,
+              CuentaMensual,
+              CargoDetalle,
+              Pago,
+              Gasto,
+              ZonaComun,
+              Reserva,
+              Parqueadero,
+              Visita,
+              AutorizacionPrevia,
+              Paquete,
+              Aviso,
+              ReporteDano,
+              NotificacionEnviada,
             ],
           });
 

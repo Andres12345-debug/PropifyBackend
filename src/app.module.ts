@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
 
 import { AppController } from './app.controller';
@@ -33,6 +34,8 @@ import { SeguridadModule } from './middleware/seguridad/seguridad.module';
         limit: 100,
       },
     ]),
+
+    ScheduleModule.forRoot(),
 
     ConexionModule,
 

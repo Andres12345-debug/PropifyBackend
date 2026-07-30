@@ -5,6 +5,7 @@ import type { Request } from 'express';
 import { RegistrosService } from './registros.service';
 
 import { RegistroDto } from './dto/registroDto';
+import { CrearTenantDto } from './dto/crear-tenant.dto';
 import { RecuperarContraseniaDto } from './dto/recuperar-contrasenia.dto';
 import { NuevaContraseniaDto } from './dto/nueva-contrasenia';
 import { CambioPasswordDto } from './dto/cambio-password.dto';
@@ -23,6 +24,21 @@ export class RegistrosController {
   ): Promise<{ token: string }> {
     return this.registroService.nuevoUsuario(
       datosRegistro,
+      request.ip ?? 'unknown',
+      request.headers['user-agent'] ?? 'unknown',
+    );
+  }
+
+  // Alta de un tenant nuevo (nuevo cliente de Propify): crea el Tenant y su
+  // usuario DUEÑO en una sola transacción.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('/tenant')
+  public async registrarTenant(
+    @Body() datos: CrearTenantDto,
+    @Req() request: Request,
+  ): Promise<{ token: string }> {
+    return this.registroService.nuevoTenant(
+      datos,
       request.ip ?? 'unknown',
       request.headers['user-agent'] ?? 'unknown',
     );

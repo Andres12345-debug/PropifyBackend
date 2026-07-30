@@ -6,6 +6,8 @@ import { Usuario } from 'src/modelos/usuario/usuario';
 import { Acceso } from 'src/modelos/acceso/acceso';
 import { USUARIOS_SQL } from './sql/usuarios.sql';
 import { CrearUsuarioDto } from './dto/crear-usuario.dto';
+import { obtenerTenantId } from 'src/middleware/seguridad/rol.helper';
+import type { SesionUsuario } from 'src/middleware/seguridad/guardianes/auth.interface';
 
 @Injectable()
 export class UsuariosService {
@@ -17,11 +19,16 @@ export class UsuariosService {
     this.accesoRepository = poolConexion.getRepository(Acceso);
   }
 
-  public async consultar(): Promise<unknown> {
-    return this.usuarioRepository.query(USUARIOS_SQL.CONSULTAR);
+  public async consultar(datosUsuario: SesionUsuario): Promise<unknown> {
+    return this.usuarioRepository.query(USUARIOS_SQL.CONSULTAR, [
+      obtenerTenantId(datosUsuario),
+    ]);
   }
 
-  public async registrar(datos: CrearUsuarioDto): Promise<{ mensaje: string }> {
+  public async registrar(
+    datos: CrearUsuarioDto,
+    datosUsuario: SesionUsuario,
+  ): Promise<{ mensaje: string }> {
     const existe = await this.usuarioRepository.findOne({
       where: { correoUsuario: datos.correoUsuario },
     });
@@ -42,6 +49,7 @@ export class UsuariosService {
         nombreUsuario: datos.nombreUsuario,
         correoUsuario: datos.correoUsuario,
         codRol: datos.codRol,
+        codTenant: obtenerTenantId(datosUsuario)!,
       });
 
       const usuarioGuardado = await queryRunner.manager.save(nuevoUsuario);
@@ -69,10 +77,13 @@ export class UsuariosService {
     }
   }
 
-  public async eliminar(id: number): Promise<{ mensaje: string }> {
+  public async eliminar(
+    id: number,
+    datosUsuario: SesionUsuario,
+  ): Promise<{ mensaje: string }> {
     const usuario = await this.usuarioRepository.findOneBy({ codUsuario: id });
 
-    if (!usuario) {
+    if (!usuario || usuario.codTenant !== obtenerTenantId(datosUsuario)) {
       throw new HttpException('Usuario no encontrado', HttpStatus.NOT_FOUND);
     }
 

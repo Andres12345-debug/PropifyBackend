@@ -4,10 +4,16 @@ import { DataSource } from 'typeorm';
 import { Rol } from 'src/modelos/rol/rol';
 import { Usuario } from 'src/modelos/usuario/usuario';
 import { Acceso } from 'src/modelos/acceso/acceso';
+import { Tenant, PlanTipo } from 'src/modelos/tenant/tenant';
 import { RolesService } from 'src/modulos/privado/roles/roles.service';
 import { RoleNames } from 'src/middleware/seguridad/rol.helper';
 
-const ROLES_BASE = [RoleNames.ADMIN, RoleNames.USUARIO];
+const ROLES_BASE = [
+  RoleNames.DUENO,
+  RoleNames.ADMIN,
+  RoleNames.RESIDENTE,
+  RoleNames.CELADOR,
+];
 const REGEX_COMPLEJIDAD_PASSWORD =
   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,128}$/;
 
@@ -78,6 +84,7 @@ export class SeedService implements OnModuleInit {
 
     const usuarioRepo = this.poolConexion.getRepository(Usuario);
     const accesoRepo = this.poolConexion.getRepository(Acceso);
+    const tenantRepo = this.poolConexion.getRepository(Tenant);
 
     const adminExiste = await usuarioRepo.findOne({
       where: { correoUsuario: adminEmail },
@@ -87,12 +94,25 @@ export class SeedService implements OnModuleInit {
       return;
     }
 
+    // El admin de arranque es el DUEÑO de un tenant demo — Propify es
+    // multi-tenant, así que todo usuario necesita un tenant al que
+    // pertenecer. Si no existe todavía, se crea uno.
+    let tenantDemo = await tenantRepo.findOne({
+      where: { nombre: 'Tenant Demo' },
+    });
+    if (!tenantDemo) {
+      tenantDemo = await tenantRepo.save(
+        tenantRepo.create({ nombre: 'Tenant Demo', plan: PlanTipo.CASAS }),
+      );
+      this.logger.log('Tenant demo creado automáticamente');
+    }
+
     const rolAdmin = await this.poolConexion
       .getRepository(Rol)
-      .findOne({ where: { nombreRol: RoleNames.ADMIN } });
+      .findOne({ where: { nombreRol: RoleNames.DUENO } });
     if (!rolAdmin) {
       this.logger.error(
-        'No se pudo crear el admin: el rol admin no existe todavía.',
+        'No se pudo crear el admin: el rol dueño no existe todavía.',
       );
       return;
     }
@@ -127,6 +147,7 @@ export class SeedService implements OnModuleInit {
       const nuevoAdmin = usuarioRepo.create({
         nombreUsuario: nombreAdmin,
         correoUsuario: adminEmail,
+        codTenant: tenantDemo.codTenant,
         codRol: rolAdmin.codRol,
       });
       const adminGuardado = await queryRunner.manager.save(nuevoAdmin);

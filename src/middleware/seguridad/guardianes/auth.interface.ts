@@ -5,6 +5,7 @@ export interface SesionUsuario {
   sub: number;
   name: string;
   nombre_rol: string;
+  tenant_id: number;
   iat?: number;
   exp?: number;
 }

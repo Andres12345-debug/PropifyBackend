@@ -22,10 +22,10 @@ import type { RequestConUsuario } from 'src/middleware/seguridad/guardianes/auth
 export class UsuariosController {
   constructor(private readonly usuarioService: UsuariosService) {}
 
-  @Roles(RoleNames.ADMIN)
+  @Roles(RoleNames.DUENO, RoleNames.ADMIN)
   @Get()
-  public obtenerUsuarios() {
-    return this.usuarioService.consultar();
+  public obtenerUsuarios(@Req() req: RequestConUsuario) {
+    return this.usuarioService.consultar(req.datosUsuario!);
   }
 
   @Get('perfil')
@@ -33,15 +33,21 @@ export class UsuariosController {
     return { usuario: req.datosUsuario };
   }
 
-  @Roles(RoleNames.ADMIN)
+  @Roles(RoleNames.DUENO, RoleNames.ADMIN)
   @Post()
-  public registrar(@Body() datos: CrearUsuarioDto) {
-    return this.usuarioService.registrar(datos);
+  public registrar(
+    @Body() datos: CrearUsuarioDto,
+    @Req() req: RequestConUsuario,
+  ) {
+    return this.usuarioService.registrar(datos, req.datosUsuario!);
   }
 
-  @Roles(RoleNames.ADMIN)
+  @Roles(RoleNames.DUENO, RoleNames.ADMIN)
   @Delete(':id')
-  public eliminar(@Param('id', ParseIntPipe) id: number) {
-    return this.usuarioService.eliminar(id);
+  public eliminar(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: RequestConUsuario,
+  ) {
+    return this.usuarioService.eliminar(id, req.datosUsuario!);
   }
 }

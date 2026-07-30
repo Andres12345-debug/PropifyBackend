@@ -8,6 +8,7 @@ export const USUARIOS_SQL = {
     FROM usuarios u
     INNER JOIN roles r
       ON r.cod_rol = u.cod_rol
+    WHERE u.cod_tenant = $1
     ORDER BY u.cod_usuario ASC
   `,
 };

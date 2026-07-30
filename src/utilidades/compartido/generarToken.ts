@@ -5,6 +5,7 @@ export interface DatosSesion {
   cod_usuario: number;
   nombre_usuario: string;
   nombre_rol: string;
+  cod_tenant: number;
 }
 
 class GenerarToken {
@@ -12,7 +13,8 @@ class GenerarToken {
     if (
       !datosSesion ||
       !datosSesion.cod_usuario ||
-      !datosSesion.nombre_usuario
+      !datosSesion.nombre_usuario ||
+      !datosSesion.cod_tenant
     ) {
       throw new Error('Faltan datos esenciales para generar el token.');
     }
@@ -29,6 +31,7 @@ class GenerarToken {
         sub: datosSesion.cod_usuario,
         name: datosSesion.nombre_usuario,
         nombre_rol: datosSesion.nombre_rol,
+        tenant_id: datosSesion.cod_tenant,
       },
       process.env.CLAVE_SECRETA,
       {

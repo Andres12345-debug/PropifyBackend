@@ -4,6 +4,7 @@ export const ACCESO_SQL = {
       u.cod_usuario,
       u.nombre_usuario,
       u.correo_usuario,
+      u.cod_tenant,
       (SELECT nombre_rol
        FROM roles
        WHERE cod_rol = u.cod_rol) AS nombre_rol
