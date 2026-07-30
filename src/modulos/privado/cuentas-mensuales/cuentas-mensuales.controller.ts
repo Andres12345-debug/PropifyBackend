@@ -32,6 +32,11 @@ export class CuentasMensualesController {
     return this.cuentasMensualesService.consultarMias(request.datosUsuario!);
   }
 
+  // Sin este @Roles, un celador (portería) podía consultar la cuenta de
+  // cobro de cualquier residente del tenant: el service solo distingue
+  // "residente" (ve la suya) de "todo lo demás" (ve cualquiera), sin
+  // filtrar por rol.
+  @Roles(RoleNames.DUENO, RoleNames.ADMIN, RoleNames.RESIDENTE)
   @Get(':id')
   public consultarUna(
     @Param('id', ParseIntPipe) id: number,

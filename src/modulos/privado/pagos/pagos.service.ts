@@ -73,30 +73,64 @@ export class PagosService {
     datos: CrearPagoDto,
     datosUsuario: SesionUsuario,
   ): Promise<Pago> {
-    const cuenta = await this.verificarCuentaDelTenant(
-      datos.codCuenta,
-      datosUsuario,
-    );
+    // Valida tenant fuera de la transacción (no necesita el lock).
+    await this.verificarCuentaDelTenant(datos.codCuenta, datosUsuario);
 
-    const nuevoPago = this.pagoRepository.create({
-      ...datos,
-      fecha: datos.fecha ? new Date(datos.fecha) : new Date(),
-    });
-    const pagoGuardado = await this.pagoRepository.save(nuevoPago);
+    const queryRunner = this.poolConexion.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    const sumaRow = await this.pagoRepository
-      .createQueryBuilder('pago')
-      .select('COALESCE(SUM(pago.monto), 0)', 'sum')
-      .where('pago.cod_cuenta = :codCuenta', { codCuenta: datos.codCuenta })
-      .getRawOne<{ sum: string }>();
-    const sum = sumaRow?.sum ?? '0';
+    try {
+      // Bloqueo de fila (SELECT ... FOR UPDATE): sin esto, dos pagos casi
+      // simultáneos a la misma cuenta podían leer la suma cada uno antes
+      // de que el otro confirmara el suyo, y ninguno terminaba marcando
+      // la cuenta como PAGADA aunque juntos ya cubrieran el total.
+      const cuenta = await queryRunner.manager
+        .getRepository(CuentaMensual)
+        .createQueryBuilder('cuenta')
+        .setLock('pessimistic_write')
+        .where('cuenta.cod_cuenta = :codCuenta', {
+          codCuenta: datos.codCuenta,
+        })
+        .getOne();
 
-    if (Number(sum) >= Number(cuenta.total)) {
-      await this.cuentaRepository.update(cuenta.codCuenta, {
-        estado: EstadoCuenta.PAGADA,
+      if (!cuenta) {
+        throw new HttpException('Cuenta no encontrada', HttpStatus.NOT_FOUND);
+      }
+
+      const nuevoPago = queryRunner.manager.getRepository(Pago).create({
+        ...datos,
+        fecha: datos.fecha ? new Date(datos.fecha) : new Date(),
       });
-    }
+      const pagoGuardado = await queryRunner.manager.save(nuevoPago);
 
-    return pagoGuardado;
+      const sumaRow = await queryRunner.manager
+        .getRepository(Pago)
+        .createQueryBuilder('pago')
+        .select('COALESCE(SUM(pago.monto), 0)', 'sum')
+        .where('pago.cod_cuenta = :codCuenta', { codCuenta: datos.codCuenta })
+        .getRawOne<{ sum: string }>();
+      const sum = sumaRow?.sum ?? '0';
+
+      if (Number(sum) >= Number(cuenta.total)) {
+        await queryRunner.manager.update(CuentaMensual, cuenta.codCuenta, {
+          estado: EstadoCuenta.PAGADA,
+        });
+      }
+
+      await queryRunner.commitTransaction();
+      return pagoGuardado;
+    } catch (error: unknown) {
+      await queryRunner.rollbackTransaction();
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        'Error al registrar el pago',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      await queryRunner.release();
+    }
   }
 }
