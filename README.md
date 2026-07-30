@@ -25,7 +25,9 @@ npm run start:dev
 
 Necesitas una base PostgreSQL accesible con los datos de `DB_*` en `.env`. Con `synchronize` activo en desarrollo (ver más abajo), TypeORM crea las tablas solo al arrancar; no hace falta correr migraciones para empezar a probar.
 
-Al arrancar, `SeedService` crea automáticamente los roles base `admin` y `usuario`. Si defines `SEED_ADMIN_EMAIL` (y opcionalmente `SEED_ADMIN_PASSWORD`), también crea un usuario admin de arranque.
+Al arrancar, `SeedService` crea automáticamente los roles base `dueno`, `admin`, `residente` y `celador`. Si defines `SEED_ADMIN_EMAIL` (y opcionalmente `SEED_ADMIN_PASSWORD`), también crea un usuario dueño de demostración en un tenant demo.
+
+Por separado, `SuperAdminService` crea el rol `superadministrador` (control total de la plataforma, sin tenant) y, si defines `SUPERADMIN_EMAIL` + `SUPERADMIN_PASSWORD` (esta sí es obligatoria, nunca se genera sola), el usuario superadministrador. No es un dato de demostración: es la cuenta de control total de la plataforma.
 
 ## Arquitectura
 
@@ -61,7 +63,7 @@ src/
 │   │   ├── registros/           # alta de tenant, signup, recuperar/cambiar password
 │   │   └── correo/              # nodemailer
 │   └── privado/                 # con JwtGuard (+ RolesGuard) — prefijo /privado
-│       ├── usuarios/ roles/                       # auth/admin
+│       ├── usuarios/ roles/ tenants/               # auth/admin/plataforma
 │       ├── inmuebles/ torres/ unidades/ residentes/
 │       ├── cuentas-mensuales/ pagos/ gastos/ caja-fuerte/
 │       ├── zonas-comunes/ reservas/ parqueaderos/
@@ -69,7 +71,8 @@ src/
 │       └── cobranza/ notificaciones/              # motor de cobranza diario
 └── utilidades/compartido/
     ├── generarToken.ts           # firma JWT: jti, sub, name, nombre_rol
-    └── seed.service.ts           # roles base + admin opcional
+    ├── seed.service.ts           # roles base del negocio + admin demo opcional
+    └── superadmin.service.ts     # rol + usuario superadministrador, solo desde .env
 ```
 
 ## Qué ya está resuelto (no lo vuelvas a implementar)
@@ -92,6 +95,7 @@ src/
 ## Módulos de dominio
 
 - `usuarios` + `roles` + `accesos` (login/logout) + `registros` (alta de tenant, signup, reset): el flujo de auth completo. Los 4 roles del negocio son `dueno`, `admin`, `residente` y `celador` (ver `rol.helper.ts`).
+- **`superadministrador`**: un quinto rol, de plataforma, no de negocio. No pertenece a ningún tenant (`Usuario.codTenant` es `null` para esta cuenta) y no lo crea ningún seed de demostración: lo provisiona `SuperAdminService` exclusivamente desde `SUPERADMIN_EMAIL`/`SUPERADMIN_PASSWORD`/`SUPERADMIN_NAME` en el `.env`. Tiene control total: `RolesGuard` lo deja pasar cualquier `@Roles(...)` sin necesidad de listarlo, y `verificarTenant` nunca lo bloquea entre tenants. Gestiona usuarios y roles de cualquier tenant vía `usuarios`/`roles`, y tenants completos vía el módulo `tenants` (exclusivo de este rol).
 - `inmuebles` / `torres` / `unidades` / `residentes`: estructura del inmueble y sus residentes, con banderas de módulo por inmueble (`tieneTorres`, `tieneZonasComunes`, `tieneParqueaderos`, `tieneCelador`, `tieneCartelera`).
 - `cuentas-mensuales` / `pagos` / `gastos` / `caja-fuerte`: cobranza y finanzas del inmueble.
 - `zonas-comunes` / `reservas`: reservas de zonas comunes, bloqueadas para residentes con cuentas vencidas.

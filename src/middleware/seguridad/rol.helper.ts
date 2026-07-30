@@ -2,7 +2,11 @@ import { SesionUsuario } from './guardianes/auth.interface';
 
 // Roles base sembrados por SeedService. Agrega aquí cualquier rol nuevo que
 // el dominio necesite — nunca lo escribas como string suelto en un @Roles().
+// SUPERADMIN es la excepción: no pertenece a ningún tenant y no lo crea el
+// seed — lo provisiona SuperAdminService desde variables de entorno
+// (ver superadmin.service.ts).
 export const RoleNames = {
+  SUPERADMIN: 'superadministrador',
   DUENO: 'dueno',
   ADMIN: 'admin',
   RESIDENTE: 'residente',
@@ -27,6 +31,13 @@ export function esAdmin(rol: string | null | undefined): boolean {
 
 export function esDueno(rol: string | null | undefined): boolean {
   return normalizarRol(rol) === RoleNames.DUENO;
+}
+
+// Control total de la plataforma: no está atado a ningún tenant y se
+// salta las validaciones de aislamiento entre tenants (RolesGuard y
+// verificarTenant lo dejan pasar siempre).
+export function esSuperAdmin(rol: string | null | undefined): boolean {
+  return normalizarRol(rol) === RoleNames.SUPERADMIN;
 }
 
 // Dueño o admin: ambos gestionan el día a día (inmuebles, residentes,

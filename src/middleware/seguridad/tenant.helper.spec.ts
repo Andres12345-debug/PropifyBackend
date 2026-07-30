@@ -26,4 +26,16 @@ describe('verificarTenant', () => {
       NotFoundException,
     );
   });
+
+  it('el superadministrador nunca es bloqueado, sin importar el tenant', () => {
+    const superAdmin: SesionUsuario = {
+      jti: 'x',
+      sub: 1,
+      name: 'Super',
+      nombre_rol: 'superadministrador',
+      tenant_id: null,
+    };
+    expect(() => verificarTenant(9, superAdmin)).not.toThrow();
+    expect(() => verificarTenant(undefined, superAdmin)).not.toThrow();
+  });
 });

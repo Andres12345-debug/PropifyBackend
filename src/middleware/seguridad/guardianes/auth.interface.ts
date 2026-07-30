@@ -5,7 +5,8 @@ export interface SesionUsuario {
   sub: number;
   name: string;
   nombre_rol: string;
-  tenant_id: number;
+  // null para el superadministrador: no pertenece a ningún tenant.
+  tenant_id: number | null;
   iat?: number;
   exp?: number;
 }

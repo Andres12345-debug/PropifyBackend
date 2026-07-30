@@ -2,6 +2,7 @@ import {
   IsEmail,
   IsNotEmpty,
   IsNumber,
+  IsOptional,
   IsString,
   Matches,
   MaxLength,
@@ -11,6 +12,13 @@ import {
 export class CrearUsuarioDto {
   @IsNumber()
   codRol!: number;
+
+  // Solo la usa el superadministrador: para cualquier otro actor el tenant
+  // siempre es el suyo propio y este campo se ignora (el tenant nunca debe
+  // venir del cliente para un rol atado a un tenant).
+  @IsOptional()
+  @IsNumber()
+  codTenant?: number;
 
   @IsString()
   @IsNotEmpty()

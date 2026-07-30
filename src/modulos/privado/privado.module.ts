@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { RouterModule, Routes } from '@nestjs/core';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { RolesModule } from './roles/roles.module';
+import { TenantsModule } from './tenants/tenants.module';
 import { InmueblesModule } from './inmuebles/inmuebles.module';
 import { TorresModule } from './torres/torres.module';
 import { UnidadesModule } from './unidades/unidades.module';
@@ -21,6 +22,7 @@ import { CobranzaModule } from './cobranza/cobranza.module';
 const modulosDominio = [
   UsuariosModule,
   RolesModule,
+  TenantsModule,
   InmueblesModule,
   TorresModule,
   UnidadesModule,

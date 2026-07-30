@@ -13,6 +13,7 @@ import { PublicoModule } from './modulos/publico/publico.module';
 import { PrivadoModule } from './modulos/privado/privado.module';
 
 import { SeedService } from './utilidades/compartido/seed.service';
+import { SuperAdminService } from './utilidades/compartido/superadmin.service';
 import { RolesModule } from './modulos/privado/roles/roles.module';
 import { envValidationSchema } from './config/env.validation';
 import { SeguridadModule } from './middleware/seguridad/seguridad.module';
@@ -54,6 +55,7 @@ import { SeguridadModule } from './middleware/seguridad/seguridad.module';
   providers: [
     AppService,
     SeedService,
+    SuperAdminService,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,

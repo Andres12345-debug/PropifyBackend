@@ -28,4 +28,12 @@ export const envValidationSchema = Joi.object({
   SEED_ADMIN_EMAIL: Joi.string().email().optional(),
   SEED_ADMIN_PASSWORD: Joi.string().min(8).max(128).optional(),
   SEED_ADMIN_NAME: Joi.string().optional(),
+
+  // Opcionales: si se definen, SuperAdminService crea el usuario con control
+  // total de la plataforma (rol superadministrador, sin tenant). A diferencia
+  // del admin demo, la contraseña nunca se genera sola: si falta o no cumple
+  // la política, la cuenta simplemente no se crea.
+  SUPERADMIN_EMAIL: Joi.string().email().optional(),
+  SUPERADMIN_PASSWORD: Joi.string().min(8).max(128).optional(),
+  SUPERADMIN_NAME: Joi.string().optional(),
 });

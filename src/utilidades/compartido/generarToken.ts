@@ -5,7 +5,8 @@ export interface DatosSesion {
   cod_usuario: number;
   nombre_usuario: string;
   nombre_rol: string;
-  cod_tenant: number;
+  // null para el superadministrador: no pertenece a ningún tenant.
+  cod_tenant: number | null;
 }
 
 class GenerarToken {
@@ -13,8 +14,7 @@ class GenerarToken {
     if (
       !datosSesion ||
       !datosSesion.cod_usuario ||
-      !datosSesion.nombre_usuario ||
-      !datosSesion.cod_tenant
+      !datosSesion.nombre_usuario
     ) {
       throw new Error('Faltan datos esenciales para generar el token.');
     }
@@ -31,7 +31,7 @@ class GenerarToken {
         sub: datosSesion.cod_usuario,
         name: datosSesion.nombre_usuario,
         nombre_rol: datosSesion.nombre_rol,
-        tenant_id: datosSesion.cod_tenant,
+        tenant_id: datosSesion.cod_tenant ?? null,
       },
       process.env.CLAVE_SECRETA,
       {

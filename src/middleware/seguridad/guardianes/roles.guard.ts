@@ -8,7 +8,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decoradores/roles.decorator';
 import { RequestConUsuario } from './auth.interface';
-import { obtenerRolUsuario } from '../rol.helper';
+import { esSuperAdmin, obtenerRolUsuario } from '../rol.helper';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -32,6 +32,12 @@ export class RolesGuard implements CanActivate {
     }
 
     const rolUsuario = obtenerRolUsuario(usuario);
+
+    // Control total de la plataforma: el superadmin pasa cualquier @Roles(),
+    // sin necesidad de listarlo explícitamente en cada endpoint.
+    if (esSuperAdmin(rolUsuario)) {
+      return true;
+    }
 
     if (
       !rolUsuario ||

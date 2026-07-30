@@ -14,8 +14,10 @@ import { Tenant } from '../tenant/tenant';
 export class Usuario {
   @PrimaryGeneratedColumn({ type: 'integer', name: 'cod_usuario' })
   public codUsuario!: number;
-  @Column({ type: 'integer', nullable: false, name: 'cod_tenant' })
-  public codTenant!: number;
+  // Nullable únicamente para el rol superadministrador: es el único usuario
+  // que no pertenece a ningún tenant (control total de la plataforma).
+  @Column({ type: 'integer', nullable: true, name: 'cod_tenant' })
+  public codTenant?: number | null;
   @Column({ type: 'integer', nullable: false, name: 'cod_rol' })
   public codRol!: number;
   @Column({
@@ -45,9 +47,11 @@ export class Usuario {
   @JoinColumn({ name: 'cod_rol', referencedColumnName: 'codRol' })
   public codRolU?: Rol;
 
-  // Relación con Tenant — todo usuario pertenece a un único tenant, y toda
-  // consulta del backend debe filtrar por este campo (regla de oro del spec).
+  // Relación con Tenant — todo usuario pertenece a un único tenant (regla de
+  // oro: toda consulta del backend debe filtrar por este campo), salvo el
+  // superadministrador, que no pertenece a ninguno.
   @ManyToOne(() => Tenant, (objTenant) => objTenant.usuarios, {
+    nullable: true,
     onDelete: 'RESTRICT',
     onUpdate: 'CASCADE',
   })
