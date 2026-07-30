@@ -1,5 +1,10 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { DataSource, MoreThanOrEqual, Repository } from 'typeorm';
+import {
+  DataSource,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+  Repository,
+} from 'typeorm';
 
 import { Visita } from 'src/modelos/visita/visita';
 import { AutorizacionPrevia } from 'src/modelos/autorizacion-previa/autorizacion-previa';
@@ -123,6 +128,13 @@ export class PorteriaService {
   ): Promise<AutorizacionPrevia> {
     const residente = await this.obtenerResidentePropio(datosUsuario);
 
+    if (new Date(datos.ventanaInicio) >= new Date(datos.ventanaFin)) {
+      throw new HttpException(
+        'ventanaInicio debe ser anterior a ventanaFin',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     const nuevaAutorizacion = this.autorizacionRepository.create({
       ...datos,
       codUnidad: residente.codUnidad,
@@ -134,14 +146,22 @@ export class PorteriaService {
   }
 
   // Usado por el celador al recibir un visitante: autorizaciones vigentes
-  // (ventana no vencida) de una unidad.
+  // AHORA MISMO (ventanaInicio ya empezó y ventanaFin no ha vencido). Antes
+  // solo se exigía ventanaFin >= ahora, así que una autorización con
+  // ventana futura ("visita el sábado") aparecía como vigente desde el
+  // momento en que se creaba.
   public async consultarAutorizacionesVigentes(
     codUnidad: number,
     datosUsuario: SesionUsuario,
   ): Promise<AutorizacionPrevia[]> {
     await this.verificarUnidadConCelador(codUnidad, datosUsuario);
+    const ahora = new Date();
     return this.autorizacionRepository.find({
-      where: { codUnidad, ventanaFin: MoreThanOrEqual(new Date()) },
+      where: {
+        codUnidad,
+        ventanaInicio: LessThanOrEqual(ahora),
+        ventanaFin: MoreThanOrEqual(ahora),
+      },
       order: { ventanaInicio: 'ASC' },
     });
   }
