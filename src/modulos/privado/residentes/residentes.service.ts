@@ -13,6 +13,7 @@ import {
   obtenerUsuarioId,
 } from 'src/middleware/seguridad/rol.helper';
 import { verificarTenant } from 'src/middleware/seguridad/tenant.helper';
+import { esViolacionForeignKey } from 'src/utilidades/compartido/fk-conflict.helper';
 import type { SesionUsuario } from 'src/middleware/seguridad/guardianes/auth.interface';
 
 @Injectable()
@@ -148,7 +149,19 @@ export class ResidentesService {
     datosUsuario: SesionUsuario,
   ): Promise<{ mensaje: string }> {
     await this.obtenerResidenteDelTenant(id, datosUsuario);
-    await this.residenteRepository.delete(id);
+
+    try {
+      await this.residenteRepository.delete(id);
+    } catch (error: unknown) {
+      if (esViolacionForeignKey(error)) {
+        throw new HttpException(
+          'No se puede eliminar: el residente tiene registros asociados (cuentas, reservas, reportes u otros)',
+          HttpStatus.CONFLICT,
+        );
+      }
+      throw error;
+    }
+
     return { mensaje: 'Residente eliminado correctamente' };
   }
 }

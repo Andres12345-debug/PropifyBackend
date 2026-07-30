@@ -6,6 +6,7 @@ import { CrearInmuebleDto } from './dto/crear-inmueble.dto';
 import { ActualizarInmuebleDto } from './dto/actualizar-inmueble.dto';
 import { obtenerTenantId } from 'src/middleware/seguridad/rol.helper';
 import { verificarTenant } from 'src/middleware/seguridad/tenant.helper';
+import { esViolacionForeignKey } from 'src/utilidades/compartido/fk-conflict.helper';
 import type { SesionUsuario } from 'src/middleware/seguridad/guardianes/auth.interface';
 
 @Injectable()
@@ -69,7 +70,17 @@ export class InmueblesService {
   ): Promise<{ mensaje: string }> {
     await this.consultarUno(id, datosUsuario);
 
-    await this.inmuebleRepository.delete(id);
+    try {
+      await this.inmuebleRepository.delete(id);
+    } catch (error: unknown) {
+      if (esViolacionForeignKey(error)) {
+        throw new HttpException(
+          'No se puede eliminar: el inmueble tiene registros asociados (torres, unidades, gastos u otros)',
+          HttpStatus.CONFLICT,
+        );
+      }
+      throw error;
+    }
 
     return { mensaje: 'Inmueble eliminado correctamente' };
   }

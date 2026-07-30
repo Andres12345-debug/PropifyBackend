@@ -15,6 +15,7 @@ import {
   obtenerRolUsuario,
   obtenerTenantId,
 } from 'src/middleware/seguridad/rol.helper';
+import { esViolacionForeignKey } from 'src/utilidades/compartido/fk-conflict.helper';
 import type { SesionUsuario } from 'src/middleware/seguridad/guardianes/auth.interface';
 
 @Injectable()
@@ -206,8 +207,7 @@ export class UsuariosService {
     } catch (error: unknown) {
       await queryRunner.rollbackTransaction();
 
-      const errorBd = error as { code?: string };
-      if (errorBd.code === '23503') {
+      if (esViolacionForeignKey(error)) {
         throw new HttpException(
           'No se puede eliminar: el usuario tiene registros asociados (visitas, avisos, paquetes u otros)',
           HttpStatus.CONFLICT,

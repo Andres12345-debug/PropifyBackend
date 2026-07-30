@@ -6,6 +6,7 @@ import {
   esSuperAdmin,
   obtenerRolUsuario,
 } from 'src/middleware/seguridad/rol.helper';
+import { esViolacionForeignKey } from 'src/utilidades/compartido/fk-conflict.helper';
 import type { SesionUsuario } from 'src/middleware/seguridad/guardianes/auth.interface';
 
 @Injectable()
@@ -123,8 +124,7 @@ export class RolesService {
     try {
       await this.rolesRepository.delete(id);
     } catch (error: unknown) {
-      const errorBd = error as { code?: string };
-      if (errorBd.code === '23503') {
+      if (esViolacionForeignKey(error)) {
         throw new HttpException(
           'No se puede eliminar: hay usuarios con este rol asignado',
           HttpStatus.CONFLICT,
