@@ -83,11 +83,41 @@ export class ReservasService {
   ): Promise<Reserva> {
     const residente = await this.obtenerResidentePropio(datosUsuario);
 
+    if (datos.horaInicio >= datos.horaFin) {
+      throw new HttpException(
+        'horaInicio debe ser anterior a horaFin',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const fechaReserva = new Date(datos.fecha);
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    if (fechaReserva < hoy) {
+      throw new HttpException(
+        'No puedes reservar una fecha pasada',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     const zona = await this.zonaRepository.findOneBy({
       codZona: datos.codZona,
     });
     if (!zona || !zona.activa) {
       throw new HttpException('Zona no encontrada', HttpStatus.NOT_FOUND);
+    }
+
+    if (zona.horaApertura && datos.horaInicio < zona.horaApertura) {
+      throw new HttpException(
+        `La zona abre a las ${zona.horaApertura}`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (zona.horaCierre && datos.horaFin > zona.horaCierre) {
+      throw new HttpException(
+        `La zona cierra a las ${zona.horaCierre}`,
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     const unidad = await this.unidadRepository.findOneBy({
@@ -114,17 +144,69 @@ export class ReservasService {
       );
     }
 
-    const nuevaReserva = this.reservaRepository.create({
-      codZona: zona.codZona,
-      codResidente: residente.codResidente,
-      fecha: new Date(datos.fecha),
-      horaInicio: datos.horaInicio,
-      horaFin: datos.horaFin,
-      costo: zona.precio,
-      estado: EstadoReserva.CONFIRMADA,
-    });
+    const queryRunner = this.poolConexion.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    return this.reservaRepository.save(nuevaReserva);
+    try {
+      // Advisory lock por zona: serializa reservas concurrentes de la
+      // misma zona dentro de esta transacción (se libera sola al hacer
+      // commit/rollback). Sin esto, dos solicitudes casi simultáneas para
+      // el mismo horario podían pasar ambas el chequeo de choque antes de
+      // que ninguna hubiera confirmado la suya — doble reserva del mismo
+      // recurso compartido.
+      await queryRunner.query('SELECT pg_advisory_xact_lock($1)', [
+        zona.codZona,
+      ]);
+
+      const choque = await queryRunner.manager
+        .getRepository(Reserva)
+        .createQueryBuilder('reserva')
+        .where('reserva.cod_zona = :codZona', { codZona: zona.codZona })
+        .andWhere('reserva.fecha = :fecha', { fecha: fechaReserva })
+        .andWhere('reserva.estado = :estado', {
+          estado: EstadoReserva.CONFIRMADA,
+        })
+        .andWhere('reserva.hora_inicio < :horaFin', {
+          horaFin: datos.horaFin,
+        })
+        .andWhere('reserva.hora_fin > :horaInicio', {
+          horaInicio: datos.horaInicio,
+        })
+        .getOne();
+
+      if (choque) {
+        throw new HttpException(
+          'Ya existe una reserva confirmada que se cruza con ese horario',
+          HttpStatus.CONFLICT,
+        );
+      }
+
+      const nuevaReserva = queryRunner.manager.getRepository(Reserva).create({
+        codZona: zona.codZona,
+        codResidente: residente.codResidente,
+        fecha: fechaReserva,
+        horaInicio: datos.horaInicio,
+        horaFin: datos.horaFin,
+        costo: zona.precio,
+        estado: EstadoReserva.CONFIRMADA,
+      });
+      const reservaGuardada = await queryRunner.manager.save(nuevaReserva);
+
+      await queryRunner.commitTransaction();
+      return reservaGuardada;
+    } catch (error: unknown) {
+      await queryRunner.rollbackTransaction();
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        'Error al registrar la reserva',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   public async cancelar(
