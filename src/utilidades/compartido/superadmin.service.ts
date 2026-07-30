@@ -6,9 +6,7 @@ import { Usuario } from 'src/modelos/usuario/usuario';
 import { Acceso } from 'src/modelos/acceso/acceso';
 import { RolesService } from 'src/modulos/privado/roles/roles.service';
 import { RoleNames } from 'src/middleware/seguridad/rol.helper';
-
-const REGEX_COMPLEJIDAD_PASSWORD =
-  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,128}$/;
+import { PASSWORD_REGEX } from './password-policy';
 
 // Bootstrap del rol de control total de la plataforma. Deliberadamente
 // separado de SeedService: el superadministrador no es un dato de
@@ -62,7 +60,7 @@ export class SuperAdminService implements OnModuleInit {
     }
 
     const password = process.env.SUPERADMIN_PASSWORD;
-    if (!password || !REGEX_COMPLEJIDAD_PASSWORD.test(password)) {
+    if (!password || !PASSWORD_REGEX.test(password)) {
       this.logger.error(
         'No se creó superadministrador: SUPERADMIN_PASSWORD falta o no cumple ' +
           'la política (8-128 caracteres, mayúscula, minúscula, número y carácter especial). ' +

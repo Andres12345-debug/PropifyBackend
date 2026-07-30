@@ -6,6 +6,11 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import {
+  PASSWORD_REGEX,
+  PASSWORD_REGEX_MESSAGE,
+} from 'src/utilidades/compartido/password-policy';
+import { NormalizarCorreo } from 'src/utilidades/compartido/normalizar-correo.decorator';
 
 export class CrearTenantDto {
   @IsString()
@@ -20,6 +25,7 @@ export class CrearTenantDto {
   @MaxLength(100)
   nombreUsuario!: string;
 
+  @NormalizarCorreo()
   @IsEmail()
   @IsNotEmpty()
   correoUsuario!: string;
@@ -28,9 +34,6 @@ export class CrearTenantDto {
   @IsNotEmpty()
   @MinLength(8)
   @MaxLength(128)
-  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
-    message:
-      'La contraseña debe contener al menos una letra minúscula, una mayúscula, un número y un carácter especial',
-  })
+  @Matches(PASSWORD_REGEX, { message: PASSWORD_REGEX_MESSAGE })
   claveAcceso!: string;
 }

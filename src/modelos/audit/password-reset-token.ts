@@ -13,8 +13,11 @@ export class PasswordResetToken {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column({ type: 'varchar', length: 36, unique: true })
-  token!: string; // UUID
+  // Hash SHA-256 (hex, 64 chars) del token UUID enviado por correo — nunca
+  // se guarda el token en texto plano, para que una fuga de esta tabla no
+  // exponga enlaces de reset todavía válidos.
+  @Column({ type: 'varchar', length: 64, unique: true })
+  token!: string;
 
   @Column({ type: 'integer' })
   userId!: number;

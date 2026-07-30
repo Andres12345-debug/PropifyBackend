@@ -1,4 +1,11 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { Acceso } from 'src/modelos/acceso/acceso';
@@ -19,16 +26,21 @@ import { NuevaContraseniaDto } from './dto/nueva-contrasenia';
 import { CambioPasswordDto } from './dto/cambio-password.dto';
 import { CorreoService } from '../correo/correo.service';
 import { RoleNames } from 'src/middleware/seguridad/rol.helper';
+import { hashToken } from 'src/utilidades/compartido/hash-token';
 import type { SesionUsuario } from 'src/middleware/seguridad/guardianes/auth.interface';
 
+const LIMPIEZA_TOKENS_INTERVAL_MS = 60 * 60 * 1000; // 1 hora
+
 @Injectable()
-export class RegistrosService {
+export class RegistrosService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(RegistrosService.name);
   private usuarioRepositorio: Repository<Usuario>;
   private accesoRepositorio: Repository<Acceso>;
   private accessLogRepositorio: Repository<AccessLog>;
   private passwordResetTokenRepositorio: Repository<PasswordResetToken>;
   private rolesRepositorio: Repository<Rol>;
   private tenantRepositorio: Repository<Tenant>;
+  private limpiezaHandle?: ReturnType<typeof setInterval>;
 
   constructor(
     private poolConexion: DataSource,
@@ -41,6 +53,29 @@ export class RegistrosService {
       poolConexion.getRepository(PasswordResetToken);
     this.rolesRepositorio = poolConexion.getRepository(Rol);
     this.tenantRepositorio = poolConexion.getRepository(Tenant);
+  }
+
+  // A diferencia de revoked_tokens (limpiado cada hora por
+  // TokenRevocationService), password_reset_tokens no tenía ninguna
+  // limpieza: los usados/expirados se acumulaban para siempre, y además
+  // bloqueaban el borrado del usuario dueño (ver UsuariosService.eliminar).
+  onModuleInit() {
+    this.limpiezaHandle = setInterval(() => {
+      void this.limpiarTokensDeReset();
+    }, LIMPIEZA_TOKENS_INTERVAL_MS);
+  }
+
+  onModuleDestroy() {
+    if (this.limpiezaHandle) clearInterval(this.limpiezaHandle);
+  }
+
+  private async limpiarTokensDeReset(): Promise<void> {
+    await this.passwordResetTokenRepositorio
+      .createQueryBuilder()
+      .delete()
+      .where('used = :used', { used: true })
+      .orWhere('expires_at < :ahora', { ahora: new Date() })
+      .execute();
   }
 
   // ALTA DE TENANT NUEVO (autoservicio): crea el Tenant y su primer
@@ -61,7 +96,7 @@ export class RegistrosService {
       if (usuarioExisteCorreo) {
         throw new HttpException(
           'El correo ya está registrado',
-          HttpStatus.NOT_ACCEPTABLE,
+          HttpStatus.CONFLICT,
         );
       }
 
@@ -124,7 +159,7 @@ export class RegistrosService {
       if (errorBd.code === '23505') {
         throw new HttpException(
           'El correo ya está registrado',
-          HttpStatus.NOT_ACCEPTABLE,
+          HttpStatus.CONFLICT,
         );
       }
       throw new HttpException(
@@ -153,10 +188,19 @@ export class RegistrosService {
       if (usuarioExisteCorreo) {
         throw new HttpException(
           'El correo ya está registrado',
-          HttpStatus.NOT_ACCEPTABLE,
+          HttpStatus.CONFLICT,
         );
       }
 
+      // Riesgo conocido y aceptado (bajo): codTenant es un entero secuencial
+      // adivinable, y este endpoint es público — alguien puede enumerar qué
+      // tenants existen y están activos probando IDs consecutivos (mitigado
+      // parcialmente por el throttle de 5/min en el controller, pero no
+      // eliminado). La solución de fondo es reemplazar codTenant por un
+      // código de invitación con suficiente entropía que el dueño del
+      // tenant comparta con sus residentes; requiere definir ese flujo de
+      // invitación y cambiar el contrato de este endpoint, así que se deja
+      // pendiente hasta que se decida el diseño real.
       const tenant = await this.tenantRepositorio.findOneBy({
         codTenant: datosRegistro.codTenant,
       });
@@ -227,7 +271,7 @@ export class RegistrosService {
       if (errorBd.code === '23505') {
         throw new HttpException(
           'El correo ya está registrado',
-          HttpStatus.NOT_ACCEPTABLE,
+          HttpStatus.CONFLICT,
         );
       }
       throw new HttpException(
@@ -261,11 +305,14 @@ export class RegistrosService {
         { used: true },
       );
 
+      // El token en texto plano solo vive en el enlace del correo; en BD se
+      // guarda su hash (ver hallazgo de auditoría: una fuga de la tabla no
+      // debe exponer enlaces de reset todavía válidos).
       const token = uuidv4();
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutos
 
       await this.passwordResetTokenRepositorio.save({
-        token,
+        token: hashToken(token),
         userId: usuario.codUsuario,
         expiresAt,
         used: false,
@@ -273,11 +320,22 @@ export class RegistrosService {
 
       const enlace = `${process.env.FRONTEND_URL}/reset-password/${token}`;
 
-      await this.mailService.enviarCorreo(
-        datos.correoUsuario,
-        'Restablece tu contraseña - Propify',
-        this.generarPlantillaCorreo(enlace, usuario.nombreUsuario),
-      );
+      // No se espera el envío del correo: si se hiciera, la latencia del
+      // SMTP (o un fallo de envío) sería distinguible de la respuesta que
+      // recibe alguien que pidió un reset para un correo que no existe,
+      // filtrando por temporización/errores qué cuentas son reales.
+      void this.mailService
+        .enviarCorreo(
+          datos.correoUsuario,
+          'Restablece tu contraseña - Propify',
+          this.generarPlantillaCorreo(enlace, usuario.nombreUsuario),
+        )
+        .catch((error: unknown) => {
+          this.logger.error(
+            `Error enviando correo de recuperación a ${datos.correoUsuario}`,
+            error instanceof Error ? error.stack : String(error),
+          );
+        });
 
       await this.accessLogRepositorio.save({
         codUsuario: usuario.codUsuario,
@@ -299,7 +357,7 @@ export class RegistrosService {
     userAgent: string,
   ): Promise<{ mensaje: string }> {
     const resetToken = await this.passwordResetTokenRepositorio.findOne({
-      where: { token, used: false },
+      where: { token: hashToken(token), used: false },
       relations: ['usuario'],
     });
 
@@ -352,6 +410,12 @@ export class RegistrosService {
     await this.accesoRepositorio.update(
       { codUsuario },
       { claveAcceso: nuevaClave },
+    );
+    // Marca el cambio para que JwtGuard invalide cualquier sesión emitida
+    // antes de este momento (ver passwordChangedAt en Usuario).
+    await this.usuarioRepositorio.update(
+      { codUsuario },
+      { passwordChangedAt: new Date() },
     );
   }
 

@@ -89,6 +89,8 @@ src/
 - **Auditoría de accesos** (`access_logs`, FK real a `usuarios` con `onDelete: SET NULL`): cada login, registro, reset y cambio de contraseña queda registrado con IP y user-agent reales de la petición.
 - **Reset de contraseña de un solo uso**: token UUID con expiración de 15 minutos; al pedir uno nuevo, los anteriores del mismo usuario se invalidan.
 - **Rol nunca viene del cliente en el autorregistro**: `POST /publico/registros/user` siempre asigna el rol `residente` server-side (a un tenant existente, indicado por `codTenant`); solo un dueño/admin puede asignar otros roles vía `POST /privado/usuarios`. `POST /publico/registros/tenant` crea un tenant nuevo junto con su usuario `dueno`.
+- **`codRol` se valida al crear un usuario** (`usuarios.service.ts`): el rol `superadministrador` nunca se puede asignar por esta vía (solo se provisiona desde el `.env`, ver abajo), y solo un `dueno` (o el superadministrador) puede asignar el rol `dueno` — un `admin` no puede mintar otro dueño ni eliminar al dueño de su tenant.
+- **`roles` es de solo lectura para `dueno`/`admin`**: la tabla `Rol` es global (no tiene `codTenant`), así que crear/editar/borrar roles es exclusivo del superadministrador — de lo contrario el dueño de un tenant podría renombrar o borrar un rol usado por todos los tenants de la plataforma.
 - **Multi-tenant**: todo `Usuario` pertenece a un `Tenant` (`codTenant`), que también viaja en el JWT (`tenant_id`). Cualquier entidad colgada de un `Inmueble` se valida contra ese tenant antes de leerse o modificarse (`tenant.helper.ts`), devolviendo 404 (no 403) si no coincide, para no filtrar existencia entre tenants.
 - **Validación de entorno con Joi**: si falta una variable requerida, la app no arranca.
 

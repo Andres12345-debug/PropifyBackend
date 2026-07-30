@@ -36,6 +36,16 @@ export class Usuario {
   })
   public correoUsuario!: string;
 
+  // JwtGuard invalida cualquier token con iat anterior a esta fecha — así
+  // cambiar la contraseña revoca todas las sesiones ya emitidas, sin tener
+  // que llevar registro de cada jti activo.
+  @Column({
+    type: 'timestamp',
+    nullable: true,
+    name: 'password_changed_at',
+  })
+  public passwordChangedAt?: Date | null;
+
   // Relación con Acceso
   @OneToOne(() => Acceso, (objAcceso) => objAcceso.usuario)
   public acceso?: Acceso;

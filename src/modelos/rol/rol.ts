@@ -6,7 +6,13 @@ export class Rol {
   @PrimaryGeneratedColumn({ type: 'integer', name: 'cod_rol' })
   public codRol!: number;
 
-  @Column({ type: 'varchar', name: 'nombre_rol', length: 250, nullable: false })
+  @Column({
+    type: 'varchar',
+    name: 'nombre_rol',
+    length: 250,
+    unique: true,
+    nullable: false,
+  })
   public nombreRol!: string;
 
   @Column({ type: 'integer', name: 'estado_rol', default: 1, nullable: false })

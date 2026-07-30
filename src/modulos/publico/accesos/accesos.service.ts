@@ -105,15 +105,18 @@ export class AccesosService {
   ): Promise<{ mensaje: string; token: string }> {
     const { correoUsuario, claveAcceso } = datosLogin;
 
-    if (
-      this.estaEnRateLimit(correoUsuario, this.loginAttemptsByEmail) ||
-      this.estaEnRateLimit(ip, this.loginAttemptsByIp)
-    ) {
+    // Solo el límite por IP se evalúa ANTES de verificar credenciales: frena
+    // a un origen que esté inundando el endpoint. El límite por correo se
+    // evalúa DESPUÉS de un intento fallido (más abajo) y nunca bloquea una
+    // contraseña correcta — si bloqueara antes de verificar, cualquiera que
+    // conociera el correo de una víctima podría dejarla sin poder iniciar
+    // sesión 15 minutos con solo 5 intentos fallidos, sin acertar nada.
+    if (this.estaEnRateLimit(ip, this.loginAttemptsByIp)) {
       await this.accessLogRepository.save({
         event: AuditEvent.LOGIN_FAIL,
         ip,
         userAgent,
-        details: `Rate limit excedido para correo: ${correoUsuario}`,
+        details: 'Rate limit por IP excedido',
       });
       throw new HttpException(
         'Demasiados intentos fallidos. Intente más tarde.',
@@ -159,6 +162,18 @@ export class AccesosService {
         userAgent,
         details: 'Contraseña incorrecta',
       });
+
+      // El límite por correo solo se aplica aquí, tras confirmar que la
+      // contraseña era incorrecta: frena a quien adivina sin conocer la
+      // clave real, pero el dueño legítimo de la cuenta nunca llega a este
+      // punto con su contraseña correcta.
+      if (this.estaEnRateLimit(correoUsuario, this.loginAttemptsByEmail)) {
+        throw new HttpException(
+          'Demasiados intentos fallidos. Intente más tarde.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+
       throw new HttpException(
         'Credenciales inválidas',
         HttpStatus.UNAUTHORIZED,

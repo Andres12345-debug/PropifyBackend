@@ -7,6 +7,7 @@ import { Acceso } from 'src/modelos/acceso/acceso';
 import { Tenant, PlanTipo } from 'src/modelos/tenant/tenant';
 import { RolesService } from 'src/modulos/privado/roles/roles.service';
 import { RoleNames } from 'src/middleware/seguridad/rol.helper';
+import { PASSWORD_REGEX } from './password-policy';
 
 const ROLES_BASE = [
   RoleNames.DUENO,
@@ -14,8 +15,6 @@ const ROLES_BASE = [
   RoleNames.RESIDENTE,
   RoleNames.CELADOR,
 ];
-const REGEX_COMPLEJIDAD_PASSWORD =
-  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,128}$/;
 
 function generarContraseñaAleatoria(longitud = 16): string {
   const mayusculas = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -124,7 +123,7 @@ export class SeedService implements OnModuleInit {
     let contrasenaGenerada = false;
 
     if (passwordEnv) {
-      if (!REGEX_COMPLEJIDAD_PASSWORD.test(passwordEnv)) {
+      if (!PASSWORD_REGEX.test(passwordEnv)) {
         this.logger.error(
           'SEED_ADMIN_PASSWORD no cumple los requisitos mínimos (8-128 caracteres, ' +
             'mayúscula, minúscula, número y carácter especial). No se creó el admin.',

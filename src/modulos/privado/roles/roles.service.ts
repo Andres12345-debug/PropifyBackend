@@ -2,6 +2,11 @@ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { Rol } from 'src/modelos/rol/rol';
 import { DataSource, Repository } from 'typeorm';
 import { CrearRolDto } from './dto/crearRol.dto';
+import {
+  esSuperAdmin,
+  obtenerRolUsuario,
+} from 'src/middleware/seguridad/rol.helper';
+import type { SesionUsuario } from 'src/middleware/seguridad/guardianes/auth.interface';
 
 @Injectable()
 export class RolesService {
@@ -12,8 +17,18 @@ export class RolesService {
   }
 
   // 🔹 Consultar todos
-  public async consultar(): Promise<Rol[]> {
-    return this.rolesRepository.find();
+  // El rol superadministrador nunca se muestra a un DUENO/ADMIN: es un rol
+  // de plataforma, no de negocio, y no deben ni conocer su codRol (ver
+  // hallazgo de auditoría: se usaba para auto-escalar creando un usuario
+  // con ese codRol vía POST /privado/usuarios).
+  public async consultar(datosUsuario: SesionUsuario): Promise<Rol[]> {
+    const roles = await this.rolesRepository.find();
+
+    if (esSuperAdmin(obtenerRolUsuario(datosUsuario))) {
+      return roles;
+    }
+
+    return roles.filter((rol) => !esSuperAdmin(rol.nombreRol));
   }
 
   // 🔹 Verificar existencia
@@ -49,10 +64,19 @@ export class RolesService {
   }
 
   // 🔹 Consultar uno
-  public async consultarUno(id: number): Promise<Rol> {
+  public async consultarUno(
+    id: number,
+    datosUsuario: SesionUsuario,
+  ): Promise<Rol> {
     const rol = await this.rolesRepository.findOneBy({ codRol: id });
 
-    if (!rol) {
+    if (
+      !rol ||
+      (esSuperAdmin(rol.nombreRol) &&
+        !esSuperAdmin(obtenerRolUsuario(datosUsuario)))
+    ) {
+      // Mismo motivo que en NotFoundException de tenant.helper: no revelar
+      // ni siquiera que ese codRol corresponde al superadministrador.
       throw new HttpException('Rol no encontrado', HttpStatus.NOT_FOUND);
     }
 
@@ -67,8 +91,19 @@ export class RolesService {
       throw new HttpException('Rol no encontrado', HttpStatus.NOT_FOUND);
     }
 
+    const nombreNormalizado = datos.nombreRol?.trim().toLowerCase();
+
+    if (nombreNormalizado && nombreNormalizado !== rol.nombreRol) {
+      const yaExiste = await this.rolesRepository.findOne({
+        where: { nombreRol: nombreNormalizado },
+      });
+      if (yaExiste) {
+        throw new HttpException('El rol ya existe', HttpStatus.CONFLICT);
+      }
+    }
+
     await this.rolesRepository.update(id, {
-      nombreRol: datos.nombreRol?.trim().toLowerCase(),
+      nombreRol: nombreNormalizado,
       estadoRol: datos.estadoRol,
     });
 
@@ -85,7 +120,18 @@ export class RolesService {
       throw new HttpException('Rol no encontrado', HttpStatus.NOT_FOUND);
     }
 
-    await this.rolesRepository.delete(id);
+    try {
+      await this.rolesRepository.delete(id);
+    } catch (error: unknown) {
+      const errorBd = error as { code?: string };
+      if (errorBd.code === '23503') {
+        throw new HttpException(
+          'No se puede eliminar: hay usuarios con este rol asignado',
+          HttpStatus.CONFLICT,
+        );
+      }
+      throw error;
+    }
 
     return {
       mensaje: 'Rol eliminado correctamente',
