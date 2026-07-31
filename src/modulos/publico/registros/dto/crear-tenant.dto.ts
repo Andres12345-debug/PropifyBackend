@@ -1,11 +1,14 @@
 import {
   IsEmail,
+  IsEnum,
   IsNotEmpty,
+  IsOptional,
   IsString,
   Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { PlanTipo } from 'src/modelos/tenant/tenant';
 import {
   PASSWORD_REGEX,
   PASSWORD_REGEX_MESSAGE,
@@ -18,6 +21,14 @@ export class CrearTenantDto {
   @MinLength(2)
   @MaxLength(250)
   nombreTenant!: string;
+
+  // Categoría del cliente (qué tipo de propiedad va a administrar). No
+  // limita nada por sí sola — el control real de qué módulos aplican es
+  // por inmueble (ver Inmueble.tieneTorres/tieneZonasComunes/etc). Si no
+  // se envía, la entidad Tenant usa su default (CASAS).
+  @IsOptional()
+  @IsEnum(PlanTipo)
+  plan?: PlanTipo;
 
   @IsString()
   @IsNotEmpty()

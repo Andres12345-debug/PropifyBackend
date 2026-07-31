@@ -12,6 +12,7 @@ import { Torre } from '../torre/torre';
 
 export enum TipoUnidad {
   APARTAMENTO = 'APARTAMENTO',
+  APARTAESTUDIO = 'APARTAESTUDIO',
   HABITACION = 'HABITACION',
   LOCAL = 'LOCAL',
   OFICINA = 'OFICINA',

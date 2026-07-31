@@ -112,7 +112,7 @@ export class RegistrosService implements OnModuleInit, OnModuleDestroy {
 
       const nuevoTenant = queryRunner.manager
         .getRepository(Tenant)
-        .create({ nombre: datos.nombreTenant });
+        .create({ nombre: datos.nombreTenant, plan: datos.plan });
       const tenantGuardado = await queryRunner.manager.save(nuevoTenant);
 
       const nuevoDueno = this.usuarioRepositorio.create({

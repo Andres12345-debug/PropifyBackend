@@ -34,6 +34,11 @@ export class Residente {
   @Column({ type: 'varchar', length: 30, nullable: false })
   public telefono!: string;
 
+  // Opcional: sin esto, CobranzaService no puede enviar recordatorios de
+  // pago ni avisos de mora por correo (solo por WhatsApp, vía telefono).
+  @Column({ type: 'varchar', length: 250, nullable: true })
+  public correo?: string;
+
   @Column({ type: 'varchar', length: 50, nullable: true })
   public cedula?: string;
 

@@ -1,6 +1,7 @@
 import {
   IsBoolean,
   IsDateString,
+  IsEmail,
   IsInt,
   IsNumber,
   IsOptional,
@@ -9,6 +10,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { NormalizarCorreo } from 'src/utilidades/compartido/normalizar-correo.decorator';
 
 export class ActualizarResidenteDto {
   @IsOptional()
@@ -20,6 +22,12 @@ export class ActualizarResidenteDto {
   @IsString()
   @MaxLength(30)
   telefono?: string;
+
+  @IsOptional()
+  @NormalizarCorreo()
+  @IsEmail()
+  @MaxLength(250)
+  correo?: string;
 
   @IsOptional()
   @IsString()

@@ -13,7 +13,10 @@ import {
 } from 'src/modelos/cargo-detalle/cargo-detalle';
 import { Reserva, EstadoReserva } from 'src/modelos/reserva/reserva';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
-import { TipoNotificacion } from 'src/modelos/notificacion-enviada/notificacion-enviada';
+import {
+  CanalNotificacion,
+  TipoNotificacion,
+} from 'src/modelos/notificacion-enviada/notificacion-enviada';
 
 const DIAS_AVISO_RECORDATORIO = 3;
 
@@ -206,12 +209,24 @@ export class CobranzaService {
       });
       if (!residente) continue;
 
+      const mensaje = `Recordatorio: tu cuenta de ${cuenta.periodo} por $${cuenta.total} vence el ${cuenta.fechaVencimiento.toLocaleDateString()}.`;
+
       await this.notificacionesService.enviar(
         TipoNotificacion.RECORDATORIO_PAGO,
         residente.telefono,
-        `Recordatorio: tu cuenta de ${cuenta.periodo} por $${cuenta.total} vence el ${cuenta.fechaVencimiento.toLocaleDateString()}.`,
+        mensaje,
         cuenta.codCuenta,
       );
+
+      if (residente.correo) {
+        await this.notificacionesService.enviar(
+          TipoNotificacion.RECORDATORIO_PAGO,
+          residente.correo,
+          mensaje,
+          cuenta.codCuenta,
+          CanalNotificacion.EMAIL,
+        );
+      }
     }
   }
 
@@ -234,12 +249,24 @@ export class CobranzaService {
       });
       if (!residente) continue;
 
+      const mensaje = `Tu cuenta de ${cuenta.periodo} está vencida. Total adeudado: $${cuenta.total}.`;
+
       await this.notificacionesService.enviar(
         TipoNotificacion.MORA,
         residente.telefono,
-        `Tu cuenta de ${cuenta.periodo} está vencida. Total adeudado: $${cuenta.total}.`,
+        mensaje,
         cuenta.codCuenta,
       );
+
+      if (residente.correo) {
+        await this.notificacionesService.enviar(
+          TipoNotificacion.MORA,
+          residente.correo,
+          mensaje,
+          cuenta.codCuenta,
+          CanalNotificacion.EMAIL,
+        );
+      }
     }
   }
 }
