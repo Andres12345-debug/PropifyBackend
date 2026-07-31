@@ -6,6 +6,7 @@ import { Inmueble } from 'src/modelos/inmueble/inmueble';
 import { CrearZonaComunDto } from './dto/crear-zona-comun.dto';
 import { ActualizarZonaComunDto } from './dto/actualizar-zona-comun.dto';
 import { verificarTenant } from 'src/middleware/seguridad/tenant.helper';
+import { esViolacionForeignKey } from 'src/utilidades/compartido/fk-conflict.helper';
 import type { SesionUsuario } from 'src/middleware/seguridad/guardianes/auth.interface';
 
 @Injectable()
@@ -95,7 +96,19 @@ export class ZonasComunesService {
     datosUsuario: SesionUsuario,
   ): Promise<{ mensaje: string }> {
     await this.obtenerZonaDelTenant(id, datosUsuario);
-    await this.zonaRepository.delete(id);
+
+    try {
+      await this.zonaRepository.delete(id);
+    } catch (error: unknown) {
+      if (esViolacionForeignKey(error)) {
+        throw new HttpException(
+          'No se puede eliminar: la zona tiene reservas asociadas',
+          HttpStatus.CONFLICT,
+        );
+      }
+      throw error;
+    }
+
     return { mensaje: 'Zona común eliminada correctamente' };
   }
 }
