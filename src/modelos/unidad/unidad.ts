@@ -18,8 +18,12 @@ export enum TipoUnidad {
   OFICINA = 'OFICINA',
 }
 
+// Incluye 'piso' porque es válido repetir un identificador (ej.
+// "Habitación 1") en pisos distintos del mismo inmueble/torre — Postgres
+// no considera dos NULL iguales, así que cuando 'piso' no se usa (casas
+// sin pisos) esta constraint no restringe nada distinto a antes.
 @Entity('unidades', { schema: 'public' })
-@Unique(['codInmueble', 'codTorre', 'identificador'])
+@Unique(['codInmueble', 'codTorre', 'piso', 'identificador'])
 export class Unidad {
   @PrimaryGeneratedColumn({ type: 'integer', name: 'cod_unidad' })
   public codUnidad!: number;

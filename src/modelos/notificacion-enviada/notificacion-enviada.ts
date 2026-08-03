@@ -6,6 +6,7 @@ export enum TipoNotificacion {
   PAQUETE = 'PAQUETE',
   AVISO = 'AVISO',
   ALERTA_DANO = 'ALERTA_DANO',
+  VENCIMIENTO_CONTRATO = 'VENCIMIENTO_CONTRATO',
 }
 
 export enum CanalNotificacion {
@@ -21,6 +22,12 @@ export class NotificacionEnviada {
 
   @Column({ type: 'integer', nullable: true, name: 'cod_cuenta' })
   public codCuenta?: number;
+
+  // Para notificaciones que no cuelgan de una cuenta de cobro (ej. aviso de
+  // vencimiento de contrato al dueño) — permite chequear idempotencia por
+  // residente en vez de por cuenta.
+  @Column({ type: 'integer', nullable: true, name: 'cod_residente' })
+  public codResidente?: number;
 
   @Column({ type: 'enum', enum: TipoNotificacion })
   public tipo!: TipoNotificacion;

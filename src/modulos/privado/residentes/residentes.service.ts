@@ -1,4 +1,6 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { existsSync, unlinkSync } from 'fs';
+import { join } from 'path';
 import { DataSource, Repository } from 'typeorm';
 
 import { Residente } from 'src/modelos/residente/residente';
@@ -10,10 +12,13 @@ import { CrearResidenteDto } from './dto/crear-residente.dto';
 import { ActualizarResidenteDto } from './dto/actualizar-residente.dto';
 import {
   RoleNames,
+  obtenerTenantId,
   obtenerUsuarioId,
 } from 'src/middleware/seguridad/rol.helper';
 import { verificarTenant } from 'src/middleware/seguridad/tenant.helper';
 import { esViolacionForeignKey } from 'src/utilidades/compartido/fk-conflict.helper';
+import { DIAS_AVISO_VENCIMIENTO_CONTRATO } from '../cobranza/cobranza.service';
+import { DIRECTORIO_CONTRATOS } from './contrato.multer-options';
 import type { SesionUsuario } from 'src/middleware/seguridad/guardianes/auth.interface';
 
 @Injectable()
@@ -91,6 +96,29 @@ export class ResidentesService {
     return residente;
   }
 
+  // Contratos que vencen dentro de la misma ventana que usa CobranzaService
+  // para avisarle al dueño por correo (ver DIAS_AVISO_VENCIMIENTO_CONTRATO) —
+  // esto es la versión "bajo demanda" para mostrar en el Dashboard.
+  public async consultarPorVencer(
+    datosUsuario: SesionUsuario,
+  ): Promise<Residente[]> {
+    const codTenant = obtenerTenantId(datosUsuario);
+    const hoy = new Date();
+    const limite = new Date();
+    limite.setDate(limite.getDate() + DIAS_AVISO_VENCIMIENTO_CONTRATO);
+
+    return this.residenteRepository
+      .createQueryBuilder('residente')
+      .leftJoinAndSelect('residente.unidad', 'unidad')
+      .leftJoin('unidad.inmueble', 'inmueble')
+      .where('inmueble.codTenant = :codTenant', { codTenant })
+      .andWhere('residente.activo = true')
+      .andWhere('residente.fechaFin IS NOT NULL')
+      .andWhere('residente.fechaFin BETWEEN :hoy AND :limite', { hoy, limite })
+      .orderBy('residente.fechaFin', 'ASC')
+      .getMany();
+  }
+
   private async validarUsuarioResidente(
     codUsuario: number,
     datosUsuario: SesionUsuario,
@@ -163,5 +191,65 @@ export class ResidentesService {
     }
 
     return { mensaje: 'Residente eliminado correctamente' };
+  }
+
+  // ------------------------------------------------------------------
+  // Contrato (Word/PDF) del residente, guardado en disco local (ver
+  // OPCIONES_MULTER_CONTRATO). Solo se persiste el nombre del archivo
+  // generado, nunca el nombre original ni la ruta completa.
+  // ------------------------------------------------------------------
+
+  public async subirContrato(
+    id: number,
+    archivo: Express.Multer.File,
+    datosUsuario: SesionUsuario,
+  ): Promise<{ mensaje: string }> {
+    const residente = await this.obtenerResidenteDelTenant(id, datosUsuario);
+
+    this.eliminarArchivoContratoSiExiste(residente.archivoContrato);
+
+    await this.residenteRepository.update(id, {
+      archivoContrato: archivo.filename,
+    });
+
+    return { mensaje: 'Contrato subido correctamente' };
+  }
+
+  public async obtenerRutaContrato(
+    id: number,
+    datosUsuario: SesionUsuario,
+  ): Promise<string> {
+    const residente = await this.obtenerResidenteDelTenant(id, datosUsuario);
+    if (!residente.archivoContrato) {
+      throw new HttpException(
+        'Este residente no tiene un contrato cargado',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return join(DIRECTORIO_CONTRATOS, residente.archivoContrato);
+  }
+
+  public async eliminarContrato(
+    id: number,
+    datosUsuario: SesionUsuario,
+  ): Promise<{ mensaje: string }> {
+    const residente = await this.obtenerResidenteDelTenant(id, datosUsuario);
+
+    this.eliminarArchivoContratoSiExiste(residente.archivoContrato);
+    // TypeORM ignora `undefined` en un update() (no genera SET); hace falta
+    // `null` explícito para limpiar la columna en la base de datos.
+    await this.residenteRepository.update(id, {
+      archivoContrato: null as unknown as string,
+    });
+
+    return { mensaje: 'Contrato eliminado correctamente' };
+  }
+
+  private eliminarArchivoContratoSiExiste(nombreArchivo?: string): void {
+    if (!nombreArchivo) return;
+    const ruta = join(DIRECTORIO_CONTRATOS, nombreArchivo);
+    if (existsSync(ruta)) {
+      unlinkSync(ruta);
+    }
   }
 }

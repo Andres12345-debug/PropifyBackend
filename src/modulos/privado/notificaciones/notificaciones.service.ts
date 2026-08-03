@@ -27,6 +27,7 @@ export class NotificacionesService {
     contenido: string,
     codCuenta?: number,
     canal: CanalNotificacion = CanalNotificacion.WHATSAPP,
+    codResidente?: number,
   ): Promise<NotificacionEnviada> {
     this.logger.log(`[stub ${canal}] ${tipo} -> ${destinatario}: ${contenido}`);
 
@@ -36,6 +37,7 @@ export class NotificacionesService {
       destinatario,
       contenido,
       codCuenta,
+      codResidente,
     });
 
     return this.notificacionRepository.save(registro);
@@ -53,6 +55,25 @@ export class NotificacionesService {
     const existente = await this.notificacionRepository
       .createQueryBuilder('n')
       .where('n.cod_cuenta = :codCuenta', { codCuenta })
+      .andWhere('n.tipo = :tipo', { tipo })
+      .andWhere('n.enviado_en >= :inicioDia', { inicioDia })
+      .getOne();
+
+    return !!existente;
+  }
+
+  // Igual que yaSeEnvioHoy, pero para notificaciones ligadas a un residente
+  // en vez de a una cuenta (ej. aviso de vencimiento de contrato).
+  public async yaSeEnvioHoyResidente(
+    codResidente: number,
+    tipo: TipoNotificacion,
+  ): Promise<boolean> {
+    const inicioDia = new Date();
+    inicioDia.setHours(0, 0, 0, 0);
+
+    const existente = await this.notificacionRepository
+      .createQueryBuilder('n')
+      .where('n.cod_residente = :codResidente', { codResidente })
       .andWhere('n.tipo = :tipo', { tipo })
       .andWhere('n.enviado_en >= :inicioDia', { inicioDia })
       .getOne();

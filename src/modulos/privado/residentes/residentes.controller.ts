@@ -9,8 +9,13 @@ import {
   Put,
   Query,
   Req,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { JwtGuard } from 'src/middleware/seguridad/guardianes/jwt.guard';
 import { RolesGuard } from 'src/middleware/seguridad/guardianes/roles.guard';
 import { Roles } from 'src/middleware/seguridad/decoradores/roles.decorator';
@@ -18,6 +23,7 @@ import { RoleNames } from 'src/middleware/seguridad/rol.helper';
 import { ResidentesService } from './residentes.service';
 import { CrearResidenteDto } from './dto/crear-residente.dto';
 import { ActualizarResidenteDto } from './dto/actualizar-residente.dto';
+import { OPCIONES_MULTER_CONTRATO } from './contrato.multer-options';
 import type { RequestConUsuario } from 'src/middleware/seguridad/guardianes/auth.interface';
 
 @Controller('residentes')
@@ -38,6 +44,14 @@ export class ResidentesController {
   @Get('me')
   public consultarMe(@Req() request: RequestConUsuario) {
     return this.residentesService.consultarMe(request.datosUsuario!);
+  }
+
+  // Debe ir antes de ':id' — si no, Nest interpreta "por-vencer" como el
+  // parámetro :id.
+  @Roles(RoleNames.DUENO, RoleNames.ADMIN)
+  @Get('por-vencer')
+  public consultarPorVencer(@Req() request: RequestConUsuario) {
+    return this.residentesService.consultarPorVencer(request.datosUsuario!);
   }
 
   @Roles(RoleNames.DUENO, RoleNames.ADMIN)
@@ -75,5 +89,43 @@ export class ResidentesController {
     @Req() request: RequestConUsuario,
   ) {
     return this.residentesService.eliminar(id, request.datosUsuario!);
+  }
+
+  @Roles(RoleNames.DUENO, RoleNames.ADMIN)
+  @Post(':id/contrato')
+  @UseInterceptors(FileInterceptor('archivo', OPCIONES_MULTER_CONTRATO))
+  public subirContrato(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() archivo: Express.Multer.File,
+    @Req() request: RequestConUsuario,
+  ) {
+    return this.residentesService.subirContrato(
+      id,
+      archivo,
+      request.datosUsuario!,
+    );
+  }
+
+  @Roles(RoleNames.DUENO, RoleNames.ADMIN)
+  @Get(':id/contrato')
+  public async descargarContrato(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() request: RequestConUsuario,
+    @Res() response: Response,
+  ): Promise<void> {
+    const ruta = await this.residentesService.obtenerRutaContrato(
+      id,
+      request.datosUsuario!,
+    );
+    response.download(ruta);
+  }
+
+  @Roles(RoleNames.DUENO, RoleNames.ADMIN)
+  @Delete(':id/contrato')
+  public eliminarContrato(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() request: RequestConUsuario,
+  ) {
+    return this.residentesService.eliminarContrato(id, request.datosUsuario!);
   }
 }

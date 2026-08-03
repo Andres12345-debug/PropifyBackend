@@ -95,6 +95,7 @@ export class UnidadesService {
       where: {
         codInmueble: datos.codInmueble,
         codTorre: codTorre ?? IsNull(),
+        piso: datos.piso ?? IsNull(),
         identificador: datos.identificador,
       },
     });

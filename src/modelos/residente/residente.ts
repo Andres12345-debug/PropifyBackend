@@ -65,4 +65,9 @@ export class Residente {
 
   @Column({ type: 'boolean', default: true })
   public activo!: boolean;
+
+  // Nombre del archivo guardado en uploads/contratos/ (no la ruta completa
+  // ni el nombre original) — ver ResidentesService.subirContrato.
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'archivo_contrato' })
+  public archivoContrato?: string;
 }

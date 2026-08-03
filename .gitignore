@@ -46,6 +46,10 @@ lerna-debug.log*
 .temp
 .tmp
 
+# archivos subidos (contratos, etc.) — no versionar
+/uploads/*
+!/uploads/**/.gitkeep
+
 # Runtime data
 pids
 *.pid

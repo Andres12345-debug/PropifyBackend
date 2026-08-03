@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DataSource, In, LessThan, Not, Repository } from 'typeorm';
 
@@ -11,14 +11,46 @@ import {
   CargoDetalle,
   TipoCargo,
 } from 'src/modelos/cargo-detalle/cargo-detalle';
+import { Pago } from 'src/modelos/pago/pago';
 import { Reserva, EstadoReserva } from 'src/modelos/reserva/reserva';
+import { Unidad } from 'src/modelos/unidad/unidad';
+import { Inmueble } from 'src/modelos/inmueble/inmueble';
+import { Usuario } from 'src/modelos/usuario/usuario';
+import { Rol } from 'src/modelos/rol/rol';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import {
   CanalNotificacion,
   TipoNotificacion,
 } from 'src/modelos/notificacion-enviada/notificacion-enviada';
+import { RoleNames, obtenerTenantId } from 'src/middleware/seguridad/rol.helper';
+import { verificarTenant } from 'src/middleware/seguridad/tenant.helper';
+import { RegistrarPagoDto } from './dto/registrar-pago.dto';
+import type { SesionUsuario } from 'src/middleware/seguridad/guardianes/auth.interface';
+
+export interface CuentaResumen {
+  codCuenta: number;
+  periodo: string;
+  fechaVencimiento: Date;
+  total: number;
+  totalPagado: number;
+  estado: EstadoCuenta;
+  codResidente: number;
+  nombreResidente: string;
+  identificadorUnidad: string;
+  codInmueble: number;
+  nombreInmueble: string;
+}
+
+export interface ConsultarCuentasFiltros {
+  estado?: EstadoCuenta;
+  inmuebleId?: number;
+}
 
 const DIAS_AVISO_RECORDATORIO = 3;
+
+// Exportado: el Dashboard (ResidentesService.consultarPorVencer) usa la
+// misma ventana para mostrar la lista de contratos por vencer.
+export const DIAS_AVISO_VENCIMIENTO_CONTRATO = 15;
 
 export function periodoDe(fecha: Date): string {
   return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`;
@@ -60,7 +92,12 @@ export class CobranzaService {
   private residenteRepository: Repository<Residente>;
   private cuentaRepository: Repository<CuentaMensual>;
   private cargoRepository: Repository<CargoDetalle>;
+  private pagoRepository: Repository<Pago>;
   private reservaRepository: Repository<Reserva>;
+  private unidadRepository: Repository<Unidad>;
+  private inmuebleRepository: Repository<Inmueble>;
+  private usuarioRepository: Repository<Usuario>;
+  private rolRepository: Repository<Rol>;
 
   constructor(
     private readonly poolConexion: DataSource,
@@ -69,7 +106,12 @@ export class CobranzaService {
     this.residenteRepository = poolConexion.getRepository(Residente);
     this.cuentaRepository = poolConexion.getRepository(CuentaMensual);
     this.cargoRepository = poolConexion.getRepository(CargoDetalle);
+    this.pagoRepository = poolConexion.getRepository(Pago);
     this.reservaRepository = poolConexion.getRepository(Reserva);
+    this.unidadRepository = poolConexion.getRepository(Unidad);
+    this.inmuebleRepository = poolConexion.getRepository(Inmueble);
+    this.usuarioRepository = poolConexion.getRepository(Usuario);
+    this.rolRepository = poolConexion.getRepository(Rol);
   }
 
   // Corre una sola vez al día, 6am hora del servidor (spec §4). Sin
@@ -87,6 +129,7 @@ export class CobranzaService {
     await this.actualizarCuentasVencidas(hoy, codTenant);
     await this.enviarRecordatorios(hoy, codTenant);
     await this.enviarAvisosMora(codTenant);
+    await this.enviarAvisosVencimientoContrato(hoy, codTenant);
 
     this.logger.log('Ciclo de cobranza diaria finalizado');
   }
@@ -297,41 +340,6 @@ export class CobranzaService {
           error instanceof Error ? error.stack : String(error),
         );
       }
-<<<<<<< HEAD
-
-      const yaEnviado = await this.notificacionesService.yaSeEnvioHoy(
-        cuenta.codCuenta,
-        TipoNotificacion.RECORDATORIO_PAGO,
-      );
-      if (yaEnviado) {
-        continue;
-      }
-
-      const residente = await this.residenteRepository.findOneBy({
-        codResidente: cuenta.codResidente,
-      });
-      if (!residente) continue;
-
-      const mensaje = `Recordatorio: tu cuenta de ${cuenta.periodo} por $${cuenta.total} vence el ${cuenta.fechaVencimiento.toLocaleDateString()}.`;
-
-      await this.notificacionesService.enviar(
-        TipoNotificacion.RECORDATORIO_PAGO,
-        residente.telefono,
-        mensaje,
-        cuenta.codCuenta,
-      );
-
-      if (residente.correo) {
-        await this.notificacionesService.enviar(
-          TipoNotificacion.RECORDATORIO_PAGO,
-          residente.correo,
-          mensaje,
-          cuenta.codCuenta,
-          CanalNotificacion.EMAIL,
-        );
-      }
-=======
->>>>>>> a4af88ea8fb20ab691de0ff764365d78912a2b59
     }
   }
 
@@ -360,12 +368,24 @@ export class CobranzaService {
     });
     if (!residente) return;
 
+    const mensaje = `Recordatorio: tu cuenta de ${cuenta.periodo} por $${cuenta.total} vence el ${cuenta.fechaVencimiento.toLocaleDateString()}.`;
+
     await this.notificacionesService.enviar(
       TipoNotificacion.RECORDATORIO_PAGO,
       residente.telefono,
-      `Recordatorio: tu cuenta de ${cuenta.periodo} por $${cuenta.total} vence el ${cuenta.fechaVencimiento.toLocaleDateString()}.`,
+      mensaje,
       cuenta.codCuenta,
     );
+
+    if (residente.correo) {
+      await this.notificacionesService.enviar(
+        TipoNotificacion.RECORDATORIO_PAGO,
+        residente.correo,
+        mensaje,
+        cuenta.codCuenta,
+        CanalNotificacion.EMAIL,
+      );
+    }
   }
 
   private async enviarAvisosMora(codTenant?: number): Promise<void> {
@@ -390,33 +410,6 @@ export class CobranzaService {
           error instanceof Error ? error.stack : String(error),
         );
       }
-<<<<<<< HEAD
-
-      const residente = await this.residenteRepository.findOneBy({
-        codResidente: cuenta.codResidente,
-      });
-      if (!residente) continue;
-
-      const mensaje = `Tu cuenta de ${cuenta.periodo} está vencida. Total adeudado: $${cuenta.total}.`;
-
-      await this.notificacionesService.enviar(
-        TipoNotificacion.MORA,
-        residente.telefono,
-        mensaje,
-        cuenta.codCuenta,
-      );
-
-      if (residente.correo) {
-        await this.notificacionesService.enviar(
-          TipoNotificacion.MORA,
-          residente.correo,
-          mensaje,
-          cuenta.codCuenta,
-          CanalNotificacion.EMAIL,
-        );
-      }
-=======
->>>>>>> a4af88ea8fb20ab691de0ff764365d78912a2b59
     }
   }
 
@@ -434,11 +427,251 @@ export class CobranzaService {
     });
     if (!residente) return;
 
+    const mensaje = `Tu cuenta de ${cuenta.periodo} está vencida. Total adeudado: $${cuenta.total}.`;
+
     await this.notificacionesService.enviar(
       TipoNotificacion.MORA,
       residente.telefono,
-      `Tu cuenta de ${cuenta.periodo} está vencida. Total adeudado: $${cuenta.total}.`,
+      mensaje,
       cuenta.codCuenta,
     );
+
+    if (residente.correo) {
+      await this.notificacionesService.enviar(
+        TipoNotificacion.MORA,
+        residente.correo,
+        mensaje,
+        cuenta.codCuenta,
+        CanalNotificacion.EMAIL,
+      );
+    }
+  }
+
+  // Avisa al dueño (no al residente) cuando falta poco para que un
+  // contrato/arriendo termine — aplica igual sin importar si el inmueble es
+  // casa, edificio, conjunto o tiene locales: la fecha vive en el
+  // Residente, no en el tipo de inmueble.
+  private async enviarAvisosVencimientoContrato(
+    hoy: Date,
+    codTenant?: number,
+  ): Promise<void> {
+    const residentesActivos = await this.obtenerResidentesActivos(codTenant);
+
+    for (const residente of residentesActivos) {
+      if (!residente.fechaFin) continue;
+      try {
+        await this.procesarVencimientoContrato(residente, hoy);
+      } catch (error) {
+        this.logger.error(
+          `Error procesando vencimiento de contrato para residente ${residente.codResidente}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
+    }
+  }
+
+  private async procesarVencimientoContrato(
+    residente: Residente,
+    hoy: Date,
+  ): Promise<void> {
+    const diasParaVencer = Math.round(
+      (residente.fechaFin!.getTime() - hoy.getTime()) / (24 * 60 * 60 * 1000),
+    );
+    if (diasParaVencer !== DIAS_AVISO_VENCIMIENTO_CONTRATO) {
+      return;
+    }
+
+    const yaEnviado = await this.notificacionesService.yaSeEnvioHoyResidente(
+      residente.codResidente,
+      TipoNotificacion.VENCIMIENTO_CONTRATO,
+    );
+    if (yaEnviado) {
+      return;
+    }
+
+    const unidad = await this.unidadRepository.findOneBy({
+      codUnidad: residente.codUnidad,
+    });
+    if (!unidad) return;
+
+    const inmueble = await this.inmuebleRepository.findOneBy({
+      codInmueble: unidad.codInmueble,
+    });
+    if (!inmueble) return;
+
+    const dueno = await this.obtenerDuenoDelTenant(inmueble.codTenant);
+    if (!dueno?.correoUsuario) return;
+
+    await this.notificacionesService.enviar(
+      TipoNotificacion.VENCIMIENTO_CONTRATO,
+      dueno.correoUsuario,
+      `El contrato de ${residente.nombre} (unidad ${unidad.identificador}) vence el ${residente.fechaFin!.toLocaleDateString()}. Quedan ${DIAS_AVISO_VENCIMIENTO_CONTRATO} días.`,
+      undefined,
+      CanalNotificacion.EMAIL,
+      residente.codResidente,
+    );
+  }
+
+  private async obtenerDuenoDelTenant(
+    codTenant: number,
+  ): Promise<Usuario | null> {
+    const rolDueno = await this.rolRepository.findOne({
+      where: { nombreRol: RoleNames.DUENO },
+    });
+    if (!rolDueno) return null;
+
+    return this.usuarioRepository.findOne({
+      where: { codTenant, codRol: rolDueno.codRol },
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // API para el módulo de Cobranza en el frontend (listar cuentas del
+  // tenant y registrar pagos manuales). Todo lo anterior en este archivo
+  // es el motor del cron; esto es la parte "bajo demanda" del dueño.
+  // ------------------------------------------------------------------
+
+  public async consultarCuentas(
+    filtros: ConsultarCuentasFiltros,
+    datosUsuario: SesionUsuario,
+  ): Promise<CuentaResumen[]> {
+    const codTenant = obtenerTenantId(datosUsuario)!;
+
+    const query = this.cuentaRepository
+      .createQueryBuilder('cuenta')
+      .innerJoin(
+        'residentes',
+        'residente',
+        'residente.cod_residente = cuenta.cod_residente',
+      )
+      .innerJoin(
+        'unidades',
+        'unidad',
+        'unidad.cod_unidad = residente.cod_unidad',
+      )
+      .innerJoin(
+        'inmuebles',
+        'inmueble',
+        'inmueble.cod_inmueble = unidad.cod_inmueble',
+      )
+      .where('inmueble.cod_tenant = :codTenant', { codTenant })
+      .select([
+        'cuenta.cod_cuenta AS "codCuenta"',
+        'cuenta.periodo AS periodo',
+        'cuenta.fecha_vencimiento AS "fechaVencimiento"',
+        'cuenta.total AS total',
+        'cuenta.estado AS estado',
+        'residente.cod_residente AS "codResidente"',
+        'residente.nombre AS "nombreResidente"',
+        'unidad.identificador AS "identificadorUnidad"',
+        'inmueble.cod_inmueble AS "codInmueble"',
+        'inmueble.nombre AS "nombreInmueble"',
+      ])
+      .orderBy('cuenta.fecha_vencimiento', 'ASC');
+
+    if (filtros.estado) {
+      query.andWhere('cuenta.estado = :estado', { estado: filtros.estado });
+    }
+    if (filtros.inmuebleId) {
+      query.andWhere('inmueble.cod_inmueble = :inmuebleId', {
+        inmuebleId: filtros.inmuebleId,
+      });
+    }
+
+    const filas = await query.getRawMany<{
+      codCuenta: number;
+      periodo: string;
+      fechaVencimiento: Date;
+      total: string;
+      estado: EstadoCuenta;
+      codResidente: number;
+      nombreResidente: string;
+      identificadorUnidad: string;
+      codInmueble: number;
+      nombreInmueble: string;
+    }>();
+
+    if (filas.length === 0) {
+      return [];
+    }
+
+    const pagosPorCuenta = await this.pagoRepository
+      .createQueryBuilder('pago')
+      .select('pago.cod_cuenta', 'codCuenta')
+      .addSelect('SUM(pago.monto)', 'totalPagado')
+      .where('pago.cod_cuenta IN (:...codCuentas)', {
+        codCuentas: filas.map((fila) => fila.codCuenta),
+      })
+      .groupBy('pago.cod_cuenta')
+      .getRawMany<{ codCuenta: number; totalPagado: string }>();
+
+    const totalPagadoPorCuenta = new Map(
+      pagosPorCuenta.map((fila) => [fila.codCuenta, Number(fila.totalPagado)]),
+    );
+
+    return filas.map((fila) => ({
+      ...fila,
+      total: Number(fila.total),
+      totalPagado: totalPagadoPorCuenta.get(fila.codCuenta) ?? 0,
+    }));
+  }
+
+  private async obtenerCuentaDelTenant(
+    codCuenta: number,
+    datosUsuario: SesionUsuario,
+  ): Promise<CuentaMensual> {
+    const cuenta = await this.cuentaRepository.findOneBy({ codCuenta });
+    if (!cuenta) {
+      throw new HttpException('Cuenta no encontrada', HttpStatus.NOT_FOUND);
+    }
+
+    const residente = await this.residenteRepository.findOneBy({
+      codResidente: cuenta.codResidente,
+    });
+    const unidad = residente
+      ? await this.unidadRepository.findOneBy({
+          codUnidad: residente.codUnidad,
+        })
+      : null;
+    const inmueble = unidad
+      ? await this.inmuebleRepository.findOneBy({
+          codInmueble: unidad.codInmueble,
+        })
+      : null;
+
+    verificarTenant(inmueble?.codTenant, datosUsuario, 'Cuenta no encontrada');
+    return cuenta;
+  }
+
+  public async registrarPago(
+    codCuenta: number,
+    datos: RegistrarPagoDto,
+    datosUsuario: SesionUsuario,
+  ): Promise<{ mensaje: string }> {
+    const cuenta = await this.obtenerCuentaDelTenant(codCuenta, datosUsuario);
+
+    await this.pagoRepository.save(
+      this.pagoRepository.create({
+        codCuenta,
+        monto: datos.monto,
+        fecha: datos.fecha ? new Date(datos.fecha) : new Date(),
+        metodo: datos.metodo,
+        referencia: datos.referencia,
+      }),
+    );
+
+    const resultado = await this.pagoRepository
+      .createQueryBuilder('pago')
+      .select('COALESCE(SUM(pago.monto), 0)', 'totalPagado')
+      .where('pago.cod_cuenta = :codCuenta', { codCuenta })
+      .getRawOne<{ totalPagado: string }>();
+
+    if (Number(resultado?.totalPagado ?? 0) >= Number(cuenta.total)) {
+      await this.cuentaRepository.update(codCuenta, {
+        estado: EstadoCuenta.PAGADA,
+      });
+    }
+
+    return { mensaje: 'Pago registrado correctamente' };
   }
 }
